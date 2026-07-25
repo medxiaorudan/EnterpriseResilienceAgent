@@ -101,8 +101,14 @@ export class IncidentsService {
     return (await this.getOne(incidentId)).proposals;
   }
 
-  async approve(incidentId: string, actor: string, comment?: string, idempotencyKey?: string) {
-    const operationKey = idempotencyKey ?? `incident:${incidentId}:approve:${actor}`;
+  async approve(
+    incidentId: string,
+    actor: string,
+    comment?: string,
+    idempotencyKey?: string,
+    dryRun = false
+  ) {
+    const operationKey = idempotencyKey ?? `incident:${incidentId}:approve:${actor}:${dryRun ? "dry-run" : "live"}`;
     const cacheKey = `idempotency:${operationKey}`;
     const cached = await this.readCachedApproval(cacheKey);
     if (cached) {
@@ -131,7 +137,8 @@ export class IncidentsService {
         incidentId,
         runbookId: proposal?.runbookId ?? "unknown-runbook",
         targetService: proposal?.targetService ?? incident.primaryService,
-        environment: proposal?.targetEnvironment ?? "production"
+        environment: proposal?.targetEnvironment ?? "production",
+        dryRun
       });
       const execution: ExecutionRecord = {
         executionId,
@@ -144,7 +151,9 @@ export class IncidentsService {
             stepId: randomUUID(),
             title: "Approval accepted",
             status: "completed",
-            detail: "Human approval validated and execution lock acquired."
+            detail: dryRun
+              ? "Human approval validated for dry-run validation and execution lock acquired."
+              : "Human approval validated and execution lock acquired."
           },
           ...executionResult.steps
         ]
@@ -167,25 +176,54 @@ export class IncidentsService {
       await this.transitionWithEvent(incidentId, "EXECUTING", "Runbook execution started", "Deterministic registered runbook execution started.", "runbook.started");
       await this.transitionWithEvent(incidentId, "VERIFYING", "Verification started", "Cross-cloud verification checks are running.", "verification.started");
 
-      const verification: VerificationResult = await adapter.verifyRecovery({
-        incidentId,
-        targetService: proposal?.targetService ?? incident.primaryService,
-        environment: proposal?.targetEnvironment ?? "production",
-        checks: proposal?.verificationChecks ?? []
-      });
+      const verification: VerificationResult = dryRun
+        ? {
+            verificationId: randomUUID(),
+            incidentId,
+            outcome: "NO_CHANGE",
+            summary: "Dry-run completed. AWS target and scale decision were validated without changing infrastructure.",
+            checks: [
+              {
+                name: "target_validation",
+                status: "passed",
+                detail: "Approved ECS target mapping and policy bounds confirmed."
+              },
+              {
+                name: "execution_mode",
+                status: "warning",
+                detail: "No infrastructure changes were applied because dry-run mode is enabled."
+              }
+            ],
+            timestamp: new Date().toISOString()
+          }
+        : await adapter.verifyRecovery({
+            incidentId,
+            targetService: proposal?.targetService ?? incident.primaryService,
+            environment: proposal?.targetEnvironment ?? "production",
+            checks: proposal?.verificationChecks ?? []
+          });
 
-      execution.status = verification.outcome === "RECOVERED" ? "completed" : "failed";
+      execution.status = verification.outcome === "RECOVERED" || verification.outcome === "NO_CHANGE" ? "completed" : "failed";
       execution.completedAt = verification.timestamp;
       execution.steps.push({
         stepId: randomUUID(),
         title: "Recovery verification",
-        status: verification.outcome === "RECOVERED" ? "completed" : "failed",
+        status:
+          verification.outcome === "RECOVERED" || verification.outcome === "NO_CHANGE"
+            ? "completed"
+            : "failed",
         detail: verification.summary
       });
 
       await this.store.setExecution(incidentId, execution);
       await this.store.setVerification(incidentId, verification);
-      await this.transitionWithEvent(incidentId, "RESOLVED", "Incident resolved", verification.summary, "incident.resolved");
+      await this.transitionWithEvent(
+        incidentId,
+        dryRun ? "AWAITING_APPROVAL" : "RESOLVED",
+        dryRun ? "Dry-run completed" : "Incident resolved",
+        verification.summary,
+        dryRun ? "runbook.dry_run_completed" : "incident.resolved"
+      );
       await this.store.recordAudit({
         incidentId,
         executionId,
@@ -194,7 +232,7 @@ export class IncidentsService {
         summary: "Recovery verified",
         detail: verification.summary
       });
-      this.emit(incidentId, "verification.completed", verification);
+      this.emit(incidentId, dryRun ? "runbook.dry_run_completed" : "verification.completed", verification);
 
       const updatedIncident = await this.getOne(incidentId);
       await this.cacheApprovalResult(cacheKey, updatedIncident);

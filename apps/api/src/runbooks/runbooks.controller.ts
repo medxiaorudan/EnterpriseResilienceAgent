@@ -16,8 +16,11 @@ export class RunbooksController {
   }
 
   @Post("runbooks/:runbookId/simulate")
-  simulate(@Param("runbookId") runbookId: string) {
-    return this.runbooksService.simulate(runbookId);
+  simulate(
+    @Param("runbookId") runbookId: string,
+    @Body() body: { dryRun?: boolean }
+  ) {
+    return this.runbooksService.simulate(runbookId, body?.dryRun);
   }
 
   @Post("runbooks/:runbookId/execute")

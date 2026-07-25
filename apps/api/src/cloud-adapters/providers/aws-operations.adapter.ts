@@ -134,6 +134,26 @@ export class AwsOperationsAdapter implements CloudOperationsAdapter {
       };
     }
 
+    if (request.dryRun && this.awsConfig.isLiveExecutionEnabled()) {
+      const preview = await this.previewLiveScaleOut(guardrails.target);
+      return {
+        simulationId: randomUUID(),
+        provider: "aws",
+        status: "passed",
+        summary: `Dry-run validated AWS connectivity and would scale ${request.targetService} from ${preview.currentDesiredCount} to ${preview.nextDesiredCount}.`,
+        checks: [
+          "AWS target mapping validated",
+          "Current desired count read from ECS",
+          "Proposed scale change remains within approved bounds"
+        ],
+        proposedChange: {
+          field: "desiredCount",
+          currentValue: preview.currentDesiredCount,
+          nextValue: preview.nextDesiredCount
+        }
+      };
+    }
+
     return {
       simulationId: randomUUID(),
       provider: "aws",
@@ -158,6 +178,35 @@ export class AwsOperationsAdapter implements CloudOperationsAdapter {
     }
 
     if (this.awsConfig.isLiveExecutionEnabled()) {
+      if (request.dryRun) {
+        const preview = await this.previewLiveScaleOut(guardrails.target);
+        return {
+          executionId: request.executionId,
+          provider: "aws",
+          status: "completed",
+          summary: `Dry-run only: validated that ${request.targetService} would scale from ${preview.currentDesiredCount} to ${preview.nextDesiredCount}.`,
+          steps: [
+            {
+              stepId: randomUUID(),
+              title: "Validate target",
+              status: "completed",
+              detail: `Confirmed ${request.targetService} is mapped to ${guardrails.target.ecsServiceName} in ${guardrails.target.region}.`
+            },
+            {
+              stepId: randomUUID(),
+              title: "Read current ECS state",
+              status: "completed",
+              detail: `Read desired count ${preview.currentDesiredCount} from ECS.`
+            },
+            {
+              stepId: randomUUID(),
+              title: "Preview desired count change",
+              status: "completed",
+              detail: `Would update desired count to ${preview.nextDesiredCount}; no infrastructure changes were applied.`
+            }
+          ]
+        };
+      }
       return this.executeLiveScaleOut(request, guardrails.target);
     }
 
@@ -283,29 +332,7 @@ export class AwsOperationsAdapter implements CloudOperationsAdapter {
       scaleStep: number;
     }
   ): Promise<ExecutionResult> {
-    const ecsClient = new ECSClient({
-      region: target.region
-    });
-
-    const describeResponse = await ecsClient.send(
-      new DescribeServicesCommand({
-        cluster: target.clusterArn,
-        services: [target.ecsServiceName]
-      })
-    );
-    const service = describeResponse.services?.[0];
-    if (!service) {
-      throw new NotFoundException(`ECS service ${target.ecsServiceName} not found in cluster ${target.clusterArn}.`);
-    }
-
-    const currentDesiredCount = service.desiredCount ?? target.minDesiredCount;
-    const nextDesiredCount = Math.min(currentDesiredCount + target.scaleStep, target.maxDesiredCount);
-
-    if (nextDesiredCount <= currentDesiredCount) {
-      throw new BadRequestException(
-        `ECS desired count ${currentDesiredCount} is already at or above the approved ceiling ${target.maxDesiredCount}.`
-      );
-    }
+    const { ecsClient, currentDesiredCount, nextDesiredCount } = await this.describeScaleOutPlan(target);
 
     try {
       await ecsClient.send(
@@ -349,6 +376,53 @@ export class AwsOperationsAdapter implements CloudOperationsAdapter {
         }
       ]
     };
+  }
+
+  private async previewLiveScaleOut(target: {
+    clusterArn: string;
+    ecsServiceName: string;
+    region: string;
+    minDesiredCount: number;
+    maxDesiredCount: number;
+    scaleStep: number;
+  }) {
+    const { currentDesiredCount, nextDesiredCount } = await this.describeScaleOutPlan(target);
+    return { currentDesiredCount, nextDesiredCount };
+  }
+
+  private async describeScaleOutPlan(target: {
+    clusterArn: string;
+    ecsServiceName: string;
+    region: string;
+    minDesiredCount: number;
+    maxDesiredCount: number;
+    scaleStep: number;
+  }) {
+    const ecsClient = new ECSClient({
+      region: target.region
+    });
+
+    const describeResponse = await ecsClient.send(
+      new DescribeServicesCommand({
+        cluster: target.clusterArn,
+        services: [target.ecsServiceName]
+      })
+    );
+    const service = describeResponse.services?.[0];
+    if (!service) {
+      throw new NotFoundException(`ECS service ${target.ecsServiceName} not found in cluster ${target.clusterArn}.`);
+    }
+
+    const currentDesiredCount = service.desiredCount ?? target.minDesiredCount;
+    const nextDesiredCount = Math.min(currentDesiredCount + target.scaleStep, target.maxDesiredCount);
+
+    if (nextDesiredCount <= currentDesiredCount) {
+      throw new BadRequestException(
+        `ECS desired count ${currentDesiredCount} is already at or above the approved ceiling ${target.maxDesiredCount}.`
+      );
+    }
+
+    return { ecsClient, currentDesiredCount, nextDesiredCount };
   }
 
   private async getLiveMetrics(query: MetricQuery, region: string): Promise<MetricResult[]> {

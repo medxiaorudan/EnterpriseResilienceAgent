@@ -44,13 +44,14 @@ export class IncidentsController {
   @Post(":incidentId/approve")
   approve(
     @Param("incidentId") incidentId: string,
-    @Body() body: { actor?: string; comment?: string; idempotencyKey?: string }
+    @Body() body: { actor?: string; comment?: string; idempotencyKey?: string; dryRun?: boolean }
   ) {
     return this.incidentsService.approve(
       incidentId,
       body.actor ?? "service-owner",
       body.comment,
-      body.idempotencyKey
+      body.idempotencyKey,
+      body.dryRun
     );
   }
 

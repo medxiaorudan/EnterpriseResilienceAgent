@@ -281,6 +281,7 @@ export interface RunbookSimulationRequest {
   incidentId?: string;
   targetService: string;
   environment: Environment;
+  dryRun?: boolean;
 }
 
 export interface SimulationResult {
@@ -289,6 +290,11 @@ export interface SimulationResult {
   status: "passed" | "failed";
   summary: string;
   checks: string[];
+  proposedChange?: {
+    field: string;
+    currentValue: number;
+    nextValue: number;
+  };
 }
 
 export interface ApprovedExecutionRequest {
@@ -297,6 +303,7 @@ export interface ApprovedExecutionRequest {
   runbookId: string;
   targetService: string;
   environment: Environment;
+  dryRun?: boolean;
 }
 
 export interface ExecutionResult {

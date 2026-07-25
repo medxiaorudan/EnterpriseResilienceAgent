@@ -273,4 +273,22 @@ describe("incident approval API", () => {
     assert.equal(response.statusCode, 503);
     assert.match(body.message, /Redis is unavailable/i);
   });
+
+  test("supports dry-run approval without resolving the incident", async () => {
+    const response = await app.inject({
+      method: "POST",
+      url: `/api/incidents/${incidentId}/approve`,
+      payload: {
+        actor: "business-approver",
+        idempotencyKey: "dry-run-1",
+        dryRun: true
+      }
+    });
+    const body = response.json();
+
+    assert.equal(response.statusCode, 201);
+    assert.equal(body.status, "AWAITING_APPROVAL");
+    assert.equal(body.latestVerification.outcome, "NO_CHANGE");
+    assert.match(body.latestVerification.summary, /Dry-run completed/i);
+  });
 });

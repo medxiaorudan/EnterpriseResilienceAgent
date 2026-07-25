@@ -21,13 +21,14 @@ export class RunbooksService {
     return runbook;
   }
 
-  async simulate(runbookId: string) {
+  async simulate(runbookId: string, dryRun = false) {
     const runbook = await this.getOne(runbookId);
     const adapter = this.cloudAdapters.getAdapter(runbook.cloudProvider);
     return adapter.simulateRunbook({
       runbookId,
       targetService: runbook.approvedTargets[0] ?? "unknown-target",
-      environment: "production"
+      environment: "production",
+      dryRun
     });
   }
 
