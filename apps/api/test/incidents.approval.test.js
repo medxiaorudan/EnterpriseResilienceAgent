@@ -1,0 +1,272 @@
+import "reflect-metadata";
+import { afterEach, beforeEach, describe, test } from "node:test";
+import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
+import { Test } from "@nestjs/testing";
+import { FastifyAdapter } from "@nestjs/platform-fastify";
+import { seedIncidents } from "@enterprise-resilience/contracts";
+import { AppModule } from "../dist/app.module.js";
+import { RedisService } from "../dist/common/redis.service.js";
+import { StoreService } from "../dist/common/store.service.js";
+
+class FakeStoreService {
+  constructor(seed = seedIncidents) {
+    this.incidents = new Map();
+    this.auditEvents = [];
+    for (const incident of structuredClone(seed)) {
+      this.incidents.set(incident.incidentId, incident);
+    }
+  }
+
+  async listIncidents() {
+    return [...this.incidents.values()];
+  }
+
+  async getIncident(incidentId) {
+    return this.incidents.get(incidentId);
+  }
+
+  async createIncident() {
+    throw new Error("Not implemented for this test suite.");
+  }
+
+  async updateIncident(incident) {
+    this.incidents.set(incident.incidentId, incident);
+    return incident;
+  }
+
+  async transitionIncident(incidentId, status, title, detail) {
+    const incident = this.incidents.get(incidentId);
+    if (!incident) {
+      return undefined;
+    }
+
+    const timelineEntry = {
+      eventId: randomUUID(),
+      timestamp: new Date().toISOString(),
+      title,
+      detail,
+      status
+    };
+
+    incident.status = status;
+    incident.updatedAt = timelineEntry.timestamp;
+    incident.timeline.push(timelineEntry);
+    this.incidents.set(incidentId, incident);
+    return { incident, timelineEntry };
+  }
+
+  async addApproval(incidentId, approval) {
+    const incident = this.incidents.get(incidentId);
+    if (!incident) {
+      return undefined;
+    }
+
+    const record = {
+      approvalId: randomUUID(),
+      incidentId,
+      actor: approval.actor,
+      decision: approval.decision,
+      comment: approval.comment,
+      timestamp: approval.timestamp ?? new Date().toISOString()
+    };
+    incident.approvals.push(record);
+    incident.updatedAt = record.timestamp;
+    this.incidents.set(incidentId, incident);
+    return record;
+  }
+
+  async setExecution(incidentId, execution) {
+    const incident = this.incidents.get(incidentId);
+    if (!incident) {
+      return undefined;
+    }
+
+    incident.latestExecution = execution;
+    incident.updatedAt = execution.completedAt ?? execution.startedAt;
+    this.incidents.set(incidentId, incident);
+    return execution;
+  }
+
+  async setVerification(incidentId, verification) {
+    const incident = this.incidents.get(incidentId);
+    if (!incident) {
+      return undefined;
+    }
+
+    incident.latestVerification = verification;
+    incident.updatedAt = verification.timestamp;
+    this.incidents.set(incidentId, incident);
+    return verification;
+  }
+
+  async recordAudit(event) {
+    const record = {
+      auditId: randomUUID(),
+      timestamp: event.timestamp ?? new Date().toISOString(),
+      ...event
+    };
+    this.auditEvents.push(record);
+    return record;
+  }
+
+  async listRunbooks() {
+    return [];
+  }
+
+  async getRunbook() {
+    return undefined;
+  }
+
+  async listAuditEvents() {
+    return this.auditEvents;
+  }
+
+  async listAuditEventsForIncident(incidentId) {
+    return this.auditEvents.filter((event) => event.incidentId === incidentId);
+  }
+
+  async listAuditEventsForExecution(executionId) {
+    return this.auditEvents.filter((event) => event.executionId === executionId);
+  }
+}
+
+class FakeRedisService {
+  constructor() {
+    this.cache = new Map();
+    this.locks = new Map();
+    this.failOnGet = false;
+    this.failOnAcquire = false;
+    this.failOnSet = false;
+    this.rejectLock = false;
+  }
+
+  async getJson(key) {
+    if (this.failOnGet) {
+      throw new Error("redis unavailable");
+    }
+    const raw = this.cache.get(key);
+    return raw ? JSON.parse(raw) : undefined;
+  }
+
+  async setJson(key, value) {
+    if (this.failOnSet) {
+      throw new Error("redis unavailable");
+    }
+    this.cache.set(key, JSON.stringify(value));
+  }
+
+  async acquireLock(key, owner) {
+    if (this.failOnAcquire) {
+      throw new Error("redis unavailable");
+    }
+    if (this.rejectLock || this.locks.has(key)) {
+      return false;
+    }
+    this.locks.set(key, owner);
+    return true;
+  }
+
+  async releaseLock(key, owner) {
+    if (this.locks.get(key) === owner) {
+      this.locks.delete(key);
+    }
+  }
+}
+
+describe("incident approval API", () => {
+  let app;
+  let fakeStore;
+  let fakeRedis;
+  const incidentId = "INC-2026-0042";
+
+  beforeEach(async () => {
+    fakeStore = new FakeStoreService();
+    fakeRedis = new FakeRedisService();
+
+    const moduleRef = await Test.createTestingModule({
+      imports: [AppModule]
+    })
+      .overrideProvider(StoreService)
+      .useValue(fakeStore)
+      .overrideProvider(RedisService)
+      .useValue(fakeRedis)
+      .compile();
+
+    app = moduleRef.createNestApplication(new FastifyAdapter());
+    app.setGlobalPrefix("api");
+    await app.init();
+    await app.getHttpAdapter().getInstance().ready();
+  });
+
+  afterEach(async () => {
+    await app.close();
+  });
+
+  test("approves once and returns cached result for the same idempotency key", async () => {
+    const idempotencyKey = "approval-key-1";
+
+    const first = await app.inject({
+      method: "POST",
+      url: `/api/incidents/${incidentId}/approve`,
+      payload: {
+        actor: "business-approver",
+        idempotencyKey
+      }
+    });
+    const firstBody = first.json();
+
+    assert.equal(first.statusCode, 201);
+    assert.equal(firstBody.status, "RESOLVED");
+    assert.equal(firstBody.approvals.length, 1);
+    assert.ok(firstBody.latestExecution.executionId);
+
+    const second = await app.inject({
+      method: "POST",
+      url: `/api/incidents/${incidentId}/approve`,
+      payload: {
+        actor: "business-approver",
+        idempotencyKey
+      }
+    });
+    const secondBody = second.json();
+
+    assert.equal(second.statusCode, 201);
+    assert.equal(secondBody.latestExecution.executionId, firstBody.latestExecution.executionId);
+    assert.equal(secondBody.approvals.length, 1);
+  });
+
+  test("returns 409 when the approval lock cannot be acquired", async () => {
+    fakeRedis.rejectLock = true;
+
+    const response = await app.inject({
+      method: "POST",
+      url: `/api/incidents/${incidentId}/approve`,
+      payload: {
+        actor: "business-approver",
+        idempotencyKey: "lock-conflict"
+      }
+    });
+    const body = response.json();
+
+    assert.equal(response.statusCode, 409);
+    assert.match(body.message, /already in progress/i);
+  });
+
+  test("returns 503 when redis is unavailable during idempotency checks", async () => {
+    fakeRedis.failOnGet = true;
+
+    const response = await app.inject({
+      method: "POST",
+      url: `/api/incidents/${incidentId}/approve`,
+      payload: {
+        actor: "business-approver",
+        idempotencyKey: "redis-down"
+      }
+    });
+    const body = response.json();
+
+    assert.equal(response.statusCode, 503);
+    assert.match(body.message, /Redis is unavailable/i);
+  });
+});

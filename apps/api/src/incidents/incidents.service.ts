@@ -1,4 +1,9 @@
-import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+  ServiceUnavailableException
+} from "@nestjs/common";
 import {
   type CreateIncidentInput,
   type ExecutionRecord,
@@ -97,14 +102,14 @@ export class IncidentsService {
   async approve(incidentId: string, actor: string, comment?: string, idempotencyKey?: string) {
     const operationKey = idempotencyKey ?? `incident:${incidentId}:approve:${actor}`;
     const cacheKey = `idempotency:${operationKey}`;
-    const cached = await this.redis.getJson<IncidentRecord>(cacheKey);
+    const cached = await this.readCachedApproval(cacheKey);
     if (cached) {
       return cached;
     }
 
     const lockOwner = randomUUID();
     const lockKey = `lock:incident:${incidentId}:approve`;
-    const lockAcquired = await this.redis.acquireLock(lockKey, lockOwner, 120_000);
+    const lockAcquired = await this.acquireApprovalLock(lockKey, lockOwner);
     if (!lockAcquired) {
       throw new ConflictException(`Approval for incident ${incidentId} is already in progress.`);
     }
@@ -112,7 +117,7 @@ export class IncidentsService {
     try {
       const incident = await this.getOne(incidentId);
       if (incident.status !== "AWAITING_APPROVAL") {
-        await this.redis.setJson(cacheKey, incident, 86_400);
+        await this.cacheApprovalResult(cacheKey, incident);
         return incident;
       }
 
@@ -213,10 +218,10 @@ export class IncidentsService {
       this.emit(incidentId, "verification.completed", verification);
 
       const updatedIncident = await this.getOne(incidentId);
-      await this.redis.setJson(cacheKey, updatedIncident, 86_400);
+      await this.cacheApprovalResult(cacheKey, updatedIncident);
       return updatedIncident;
     } finally {
-      await this.redis.releaseLock(lockKey, lockOwner);
+      await this.releaseApprovalLock(lockKey, lockOwner);
     }
   }
 
@@ -276,5 +281,37 @@ export class IncidentsService {
       timestamp: new Date().toISOString(),
       payload
     });
+  }
+
+  private async readCachedApproval(cacheKey: string) {
+    try {
+      return await this.redis.getJson<IncidentRecord>(cacheKey);
+    } catch {
+      throw new ServiceUnavailableException("Redis is unavailable for approval idempotency checks.");
+    }
+  }
+
+  private async acquireApprovalLock(lockKey: string, lockOwner: string) {
+    try {
+      return await this.redis.acquireLock(lockKey, lockOwner, 120_000);
+    } catch {
+      throw new ServiceUnavailableException("Redis is unavailable for execution locking.");
+    }
+  }
+
+  private async cacheApprovalResult(cacheKey: string, incident: IncidentRecord) {
+    try {
+      await this.redis.setJson(cacheKey, incident, 86_400);
+    } catch {
+      throw new ServiceUnavailableException("Redis is unavailable for approval result caching.");
+    }
+  }
+
+  private async releaseApprovalLock(lockKey: string, lockOwner: string) {
+    try {
+      await this.redis.releaseLock(lockKey, lockOwner);
+    } catch {
+      // Failing to release an already-expiring lock should not corrupt the approval outcome.
+    }
   }
 }
