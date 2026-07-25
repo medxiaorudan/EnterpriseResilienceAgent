@@ -1,9 +1,13 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
+import { CloudAdaptersService } from "../cloud-adapters/cloud-adapters.service.js";
 import { StoreService } from "../common/store.service.js";
 
 @Injectable()
 export class RunbooksService {
-  constructor(private readonly store: StoreService) {}
+  constructor(
+    private readonly store: StoreService,
+    private readonly cloudAdapters: CloudAdaptersService
+  ) {}
 
   list() {
     return this.store.listRunbooks();
@@ -19,11 +23,12 @@ export class RunbooksService {
 
   async simulate(runbookId: string) {
     const runbook = await this.getOne(runbookId);
-    return {
+    const adapter = this.cloudAdapters.getAdapter(runbook.cloudProvider);
+    return adapter.simulateRunbook({
       runbookId,
-      simulation: "passed",
-      summary: `${runbook.title} is within policy for approved targets ${runbook.approvedTargets.join(", ")}.`
-    };
+      targetService: runbook.approvedTargets[0] ?? "unknown-target",
+      environment: "production"
+    });
   }
 
   async execute(runbookId: string, incidentId?: string) {

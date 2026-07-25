@@ -228,6 +228,120 @@ export interface MlopsCapabilityProfile {
   deploymentStrategies: string[];
 }
 
+export interface MetricQuery {
+  serviceId: string;
+  metricName: string;
+  statistic?: "avg" | "sum" | "min" | "max" | "p95";
+  timeRange: TimeRange;
+}
+
+export interface MetricResult {
+  metricName: string;
+  value: number;
+  unit: string;
+  timestamp: string;
+}
+
+export interface LogQuery {
+  serviceId: string;
+  pattern: string;
+  timeRange: TimeRange;
+}
+
+export interface LogResult {
+  timestamp: string;
+  message: string;
+  source: string;
+}
+
+export interface SecurityQuery {
+  serviceId: string;
+  environment: Environment;
+}
+
+export interface SecurityFinding {
+  findingId: string;
+  severity: "low" | "medium" | "high" | "critical";
+  summary: string;
+}
+
+export interface CostQuery {
+  serviceId: string;
+  environment: Environment;
+}
+
+export interface CostSignal {
+  signalId: string;
+  estimatedCostPerHour: number;
+  summary: string;
+}
+
+export interface RunbookSimulationRequest {
+  runbookId: string;
+  incidentId?: string;
+  targetService: string;
+  environment: Environment;
+}
+
+export interface SimulationResult {
+  simulationId: string;
+  provider: CloudProvider;
+  status: "passed" | "failed";
+  summary: string;
+  checks: string[];
+}
+
+export interface ApprovedExecutionRequest {
+  executionId: string;
+  incidentId: string;
+  runbookId: string;
+  targetService: string;
+  environment: Environment;
+}
+
+export interface ExecutionResult {
+  executionId: string;
+  provider: CloudProvider;
+  status: "completed" | "failed";
+  summary: string;
+  steps: ExecutionRecord["steps"];
+}
+
+export interface VerificationRequest {
+  incidentId: string;
+  targetService: string;
+  environment: Environment;
+  checks: string[];
+}
+
+export interface RollbackRequest {
+  executionId: string;
+  incidentId: string;
+  runbookId: string;
+  targetService: string;
+}
+
+export interface RollbackResult {
+  executionId: string;
+  provider: CloudProvider;
+  status: "completed" | "failed";
+  summary: string;
+}
+
+export interface CloudOperationsAdapter {
+  provider: CloudProvider;
+  getServiceHealth(serviceId: string): Promise<ServiceHealth>;
+  getRecentChanges(serviceId: string, timeRange: TimeRange): Promise<CloudChange[]>;
+  getMetrics(query: MetricQuery): Promise<MetricResult[]>;
+  queryLogs(query: LogQuery): Promise<LogResult[]>;
+  getSecurityFindings(query: SecurityQuery): Promise<SecurityFinding[]>;
+  getCostSignals(query: CostQuery): Promise<CostSignal[]>;
+  simulateRunbook(request: RunbookSimulationRequest): Promise<SimulationResult>;
+  executeRunbook(request: ApprovedExecutionRequest): Promise<ExecutionResult>;
+  verifyRecovery(request: VerificationRequest): Promise<VerificationResult>;
+  rollback(request: RollbackRequest): Promise<RollbackResult>;
+}
+
 const now = "2026-07-25T09:30:00.000Z";
 
 export const seedServices: CloudService[] = [

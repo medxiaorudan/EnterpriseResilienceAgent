@@ -11,6 +11,7 @@ import {
   type VerificationResult
 } from "@enterprise-resilience/contracts";
 import { randomUUID } from "node:crypto";
+import { CloudAdaptersService } from "../cloud-adapters/cloud-adapters.service.js";
 import { RedisService } from "../common/redis.service.js";
 import { StoreService } from "../common/store.service.js";
 import { EventsService } from "../events/events.service.js";
@@ -20,6 +21,7 @@ export class IncidentsService {
   constructor(
     private readonly store: StoreService,
     private readonly redis: RedisService,
+    private readonly cloudAdapters: CloudAdaptersService,
     private readonly events: EventsService
   ) {}
 
@@ -122,11 +124,20 @@ export class IncidentsService {
       }
 
       const executionId = randomUUID();
+      const proposal = incident.proposals[0];
+      const adapter = this.cloudAdapters.getAdapter(proposal?.cloudProvider ?? "aws");
+      const executionResult = await adapter.executeRunbook({
+        executionId,
+        incidentId,
+        runbookId: proposal?.runbookId ?? "unknown-runbook",
+        targetService: proposal?.targetService ?? incident.primaryService,
+        environment: proposal?.targetEnvironment ?? "production"
+      });
       const execution: ExecutionRecord = {
         executionId,
         incidentId,
-        runbookId: incident.proposals[0]?.runbookId ?? "unknown-runbook",
-        status: "running",
+        runbookId: proposal?.runbookId ?? "unknown-runbook",
+        status: executionResult.status === "completed" ? "completed" : "failed",
         startedAt: new Date().toISOString(),
         steps: [
           {
@@ -135,12 +146,7 @@ export class IncidentsService {
             status: "completed",
             detail: "Human approval validated and execution lock acquired."
           },
-          {
-            stepId: randomUUID(),
-            title: "Runbook execution",
-            status: "running",
-            detail: "Deterministic registered runbook execution in progress."
-          }
+          ...executionResult.steps
         ]
       };
 
@@ -161,46 +167,19 @@ export class IncidentsService {
       await this.transitionWithEvent(incidentId, "EXECUTING", "Runbook execution started", "Deterministic registered runbook execution started.", "runbook.started");
       await this.transitionWithEvent(incidentId, "VERIFYING", "Verification started", "Cross-cloud verification checks are running.", "verification.started");
 
-      const verification: VerificationResult = {
-        verificationId: randomUUID(),
+      const verification: VerificationResult = await adapter.verifyRecovery({
         incidentId,
-        outcome: "RECOVERED",
-        summary: "Checkout success recovered above 99.5% and queue depth is falling.",
-        checks: [
-          {
-            name: "checkout_success_rate",
-            status: "passed",
-            detail: "Recovered to 99.6% within 4 minutes."
-          },
-          {
-            name: "p95_latency",
-            status: "passed",
-            detail: "Reduced to 1.7 seconds."
-          },
-          {
-            name: "payment-routing health",
-            status: "passed",
-            detail: "GCP dependency remained stable during recovery."
-          }
-        ],
-        timestamp: new Date().toISOString()
-      };
+        targetService: proposal?.targetService ?? incident.primaryService,
+        environment: proposal?.targetEnvironment ?? "production",
+        checks: proposal?.verificationChecks ?? []
+      });
 
-      execution.status = "completed";
+      execution.status = verification.outcome === "RECOVERED" ? "completed" : "failed";
       execution.completedAt = verification.timestamp;
-      execution.steps = execution.steps.map((step) =>
-        step.title === "Runbook execution"
-          ? {
-              ...step,
-              status: "completed",
-              detail: "Runbook execution completed and handed over to verification."
-            }
-          : step
-      );
       execution.steps.push({
         stepId: randomUUID(),
         title: "Recovery verification",
-        status: "completed",
+        status: verification.outcome === "RECOVERED" ? "completed" : "failed",
         detail: verification.summary
       });
 

@@ -220,6 +220,10 @@ describe("incident approval API", () => {
     assert.equal(firstBody.status, "RESOLVED");
     assert.equal(firstBody.approvals.length, 1);
     assert.ok(firstBody.latestExecution.executionId);
+    assert.deepEqual(
+      firstBody.latestExecution.steps.slice(1, 4).map((step) => step.title),
+      ["Validate target", "Assume short-lived role", "Increase desired count"]
+    );
 
     const second = await app.inject({
       method: "POST",
