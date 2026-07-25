@@ -1,0 +1,94 @@
+[
+  {
+    "scenarioId": "mvp-aws-capacity-001",
+    "title": "AWS checkout capacity saturation",
+    "incidentFamily": "Incident B — Insufficient AWS application capacity",
+    "severity": "SEV-2",
+    "primaryService": "checkout-api",
+    "cloudProviders": ["aws", "gcp"],
+    "customerImpact": "8-12% of checkout attempts fail during peak traffic.",
+    "signals": [
+      "SQS queue depth grows for 10 minutes",
+      "ECS desired count remains at baseline while CPU stays above 85%",
+      "Aurora latency remains normal",
+      "GCP payment-routing error rate remains below 1%"
+    ],
+    "expectedHypothesis": "Application worker saturation",
+    "expectedAction": "aws-ecs-scale-service",
+    "expectedOutcome": "RECOVERED",
+    "verificationChecks": [
+      "checkout_success_rate > 99.5%",
+      "p95_latency < 2 seconds",
+      "queue_depth decreases for 5 minutes"
+    ]
+  },
+  {
+    "scenarioId": "mvp-aws-task-002",
+    "title": "Unhealthy ECS task drives rising error rate",
+    "incidentFamily": "Incident A — Unhealthy AWS ECS workload",
+    "severity": "SEV-2",
+    "primaryService": "checkout-api",
+    "cloudProviders": ["aws", "gcp"],
+    "customerImpact": "Checkout requests intermittently return 5xx errors.",
+    "signals": [
+      "One ECS task fails health checks repeatedly",
+      "Healthy task count drops from 6 to 5",
+      "Queue depth rises moderately",
+      "GCP dependency remains healthy"
+    ],
+    "expectedHypothesis": "Single unhealthy task in the worker pool",
+    "expectedAction": "aws-ecs-replace-task",
+    "expectedOutcome": "RECOVERED",
+    "verificationChecks": [
+      "healthy_task_count restored",
+      "5xx rate returns below 1%",
+      "no additional task churn"
+    ]
+  },
+  {
+    "scenarioId": "mvp-gcp-revision-003",
+    "title": "Cloud Run bad revision increases payment latency",
+    "incidentFamily": "Incident C — Unhealthy GCP Cloud Run service",
+    "severity": "SEV-2",
+    "primaryService": "payment-routing",
+    "cloudProviders": ["gcp", "aws"],
+    "customerImpact": "Payment authorizations slow down and some checkout attempts time out.",
+    "signals": [
+      "Cloud Run p95 latency jumps above 4 seconds",
+      "Revision error rate exceeds 7%",
+      "AWS checkout-api remains healthy except downstream timeout errors",
+      "Recent GCP revision deployment occurred within 20 minutes"
+    ],
+    "expectedHypothesis": "Regressed Cloud Run revision",
+    "expectedAction": "gcp-cloud-run-shift-revision",
+    "expectedOutcome": "RECOVERED",
+    "verificationChecks": [
+      "payment-routing error rate normalizes",
+      "AWS checkout success recovers",
+      "no increased authorization failures"
+    ]
+  },
+  {
+    "scenarioId": "mvp-cross-cloud-rollback-004",
+    "title": "Cross-cloud deployment regression after rollout",
+    "incidentFamily": "Incident D — Bad cross-cloud deployment",
+    "severity": "SEV-1",
+    "primaryService": "checkout-api",
+    "cloudProviders": ["aws", "gcp"],
+    "customerImpact": "Checkout conversion drops sharply after a paired deployment.",
+    "signals": [
+      "Error rate increases immediately after deployment in one cloud",
+      "Trace path isolates failing dependency chain",
+      "Previous version shows healthy baseline",
+      "Business KPI drops below agreed threshold"
+    ],
+    "expectedHypothesis": "Deployment-induced regression in a cross-cloud dependency path",
+    "expectedAction": "manual rollback recommendation",
+    "expectedOutcome": "RECOVERED or ESCALATED",
+    "verificationChecks": [
+      "business KPI recovers",
+      "both cloud services return to healthy state",
+      "new errors do not appear post-rollback"
+    ]
+  }
+]

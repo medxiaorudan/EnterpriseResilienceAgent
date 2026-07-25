@@ -12,5 +12,8 @@
     "dev:api": "npm run start:dev --workspace @enterprise-resilience/api",
     "build": "npm run build --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present"
+  },
+  "dependencies": {
+    "pg": "^8.22.0"
   }
 }

@@ -9,16 +9,16 @@ export class RunbooksService {
     return this.store.listRunbooks();
   }
 
-  getOne(runbookId: string) {
-    const runbook = this.store.getRunbook(runbookId);
+  async getOne(runbookId: string) {
+    const runbook = await this.store.getRunbook(runbookId);
     if (!runbook) {
       throw new NotFoundException(`Runbook ${runbookId} not found.`);
     }
     return runbook;
   }
 
-  simulate(runbookId: string) {
-    const runbook = this.getOne(runbookId);
+  async simulate(runbookId: string) {
+    const runbook = await this.getOne(runbookId);
     return {
       runbookId,
       simulation: "passed",
@@ -26,8 +26,8 @@ export class RunbooksService {
     };
   }
 
-  execute(runbookId: string, incidentId?: string) {
-    const runbook = this.getOne(runbookId);
+  async execute(runbookId: string, incidentId?: string) {
+    const runbook = await this.getOne(runbookId);
     return {
       runbookId,
       incidentId,

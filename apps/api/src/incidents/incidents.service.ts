@@ -19,8 +19,8 @@ export class IncidentsService {
     return this.store.listIncidents();
   }
 
-  create(input: CreateIncidentInput) {
-    const incident = this.store.createIncident(input);
+  async create(input: CreateIncidentInput) {
+    const incident = await this.store.createIncident(input);
     if (!incident) {
       throw new NotFoundException(`Service ${input.primaryService} not found.`);
     }
@@ -52,7 +52,7 @@ export class IncidentsService {
     ];
 
     for (const transition of transitions) {
-      const result = this.store.transitionIncident(
+      const result = await this.store.transitionIncident(
         incident.incidentId,
         transition.status,
         transition.title,
@@ -66,8 +66,8 @@ export class IncidentsService {
     return this.getOne(incident.incidentId);
   }
 
-  getOne(incidentId: string) {
-    const incident = this.store.getIncident(incidentId);
+  async getOne(incidentId: string) {
+    const incident = await this.store.getIncident(incidentId);
     if (!incident) {
       throw new NotFoundException(`Incident ${incidentId} not found.`);
     }
@@ -75,38 +75,38 @@ export class IncidentsService {
     return incident;
   }
 
-  getTimeline(incidentId: string) {
-    return this.getOne(incidentId).timeline;
+  async getTimeline(incidentId: string) {
+    return (await this.getOne(incidentId)).timeline;
   }
 
-  getEvidence(incidentId: string) {
-    return this.getOne(incidentId).evidence;
+  async getEvidence(incidentId: string) {
+    return (await this.getOne(incidentId)).evidence;
   }
 
-  getHypotheses(incidentId: string) {
-    return this.getOne(incidentId).hypotheses;
+  async getHypotheses(incidentId: string) {
+    return (await this.getOne(incidentId)).hypotheses;
   }
 
-  getActions(incidentId: string) {
-    return this.getOne(incidentId).proposals;
+  async getActions(incidentId: string) {
+    return (await this.getOne(incidentId)).proposals;
   }
 
-  approve(incidentId: string, actor: string, comment?: string) {
-    const incident = this.getOne(incidentId);
-    this.store.addApproval(incidentId, {
+  async approve(incidentId: string, actor: string, comment?: string) {
+    const incident = await this.getOne(incidentId);
+    await this.store.addApproval(incidentId, {
       actor,
       decision: "approved",
       comment
     });
-    this.store.recordAudit({
+    await this.store.recordAudit({
       incidentId,
       actor,
       category: "approval",
       summary: "Incident action approved",
       detail: comment ?? "Approved from incident workspace."
     });
-    this.transitionWithEvent(incidentId, "EXECUTING", "Runbook execution started", "Deterministic registered runbook execution started.", "runbook.started");
-    this.transitionWithEvent(incidentId, "VERIFYING", "Verification started", "Cross-cloud verification checks are running.", "verification.started");
+    await this.transitionWithEvent(incidentId, "EXECUTING", "Runbook execution started", "Deterministic registered runbook execution started.", "runbook.started");
+    await this.transitionWithEvent(incidentId, "VERIFYING", "Verification started", "Cross-cloud verification checks are running.", "verification.started");
 
     const verification: VerificationResult = {
       verificationId: randomUUID(),
@@ -132,9 +132,9 @@ export class IncidentsService {
       ],
       timestamp: new Date().toISOString()
     };
-    this.store.setVerification(incidentId, verification);
-    this.transitionWithEvent(incidentId, "RESOLVED", "Incident resolved", verification.summary, "incident.resolved");
-    this.store.recordAudit({
+    await this.store.setVerification(incidentId, verification);
+    await this.transitionWithEvent(incidentId, "RESOLVED", "Incident resolved", verification.summary, "incident.resolved");
+    await this.store.recordAudit({
       incidentId,
       actor: "verification-service",
       category: "verification",
@@ -145,48 +145,48 @@ export class IncidentsService {
     return this.getOne(incidentId);
   }
 
-  reject(incidentId: string, actor: string, comment?: string) {
-    this.store.addApproval(incidentId, {
+  async reject(incidentId: string, actor: string, comment?: string) {
+    await this.store.addApproval(incidentId, {
       actor,
       decision: "rejected",
       comment
     });
-    this.store.recordAudit({
+    await this.store.recordAudit({
       incidentId,
       actor,
       category: "approval",
       summary: "Incident action rejected",
       detail: comment ?? "Action rejected."
     });
-    this.transitionWithEvent(incidentId, "ESCALATED", "Incident escalated", "Approval rejected and incident escalated to on-call team.", "incident.escalated");
+    await this.transitionWithEvent(incidentId, "ESCALATED", "Incident escalated", "Approval rejected and incident escalated to on-call team.", "incident.escalated");
     return this.getOne(incidentId);
   }
 
-  escalate(incidentId: string, actor: string, comment?: string) {
-    this.store.addApproval(incidentId, {
+  async escalate(incidentId: string, actor: string, comment?: string) {
+    await this.store.addApproval(incidentId, {
       actor,
       decision: "escalated",
       comment
     });
-    this.store.recordAudit({
+    await this.store.recordAudit({
       incidentId,
       actor,
       category: "approval",
       summary: "Incident escalated",
       detail: comment ?? "Escalated for manual handling."
     });
-    this.transitionWithEvent(incidentId, "ESCALATED", "Manual escalation", "Manual investigation requested.", "incident.escalated");
+    await this.transitionWithEvent(incidentId, "ESCALATED", "Manual escalation", "Manual investigation requested.", "incident.escalated");
     return this.getOne(incidentId);
   }
 
-  private transitionWithEvent(
+  private async transitionWithEvent(
     incidentId: string,
     status: IncidentRecord["status"],
     title: string,
     detail: string,
     eventType: string
   ) {
-    const result = this.store.transitionIncident(incidentId, status, title, detail);
+    const result = await this.store.transitionIncident(incidentId, status, title, detail);
     if (result) {
       this.emit(incidentId, eventType, result.timelineEntry);
     }

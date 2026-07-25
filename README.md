@@ -6,7 +6,7 @@ A multicloud resilience platform that helps enterprise systems detect failures, 
 
 ```text
 apps/
-  api/      NestJS API with in-memory MVP incident orchestration and SSE
+  api/      NestJS API with Postgres persistence, seeded incident data, and SSE
   web/      React + Vite frontend for overview, incidents, approvals, runbooks, and audit
 packages/
   contracts/ Shared TypeScript contracts and seeded demo data
@@ -25,13 +25,18 @@ This repository now contains the first runnable product slice from the engineeri
 - A React dashboard with incident list/detail flows and live event streaming
 - Seed data for an AWS checkout service with a GCP dependency
 - Registered AWS and GCP runbook examples and policy stubs
+- Postgres-backed persistence for incidents, services, approvals, runbooks, and audit events
+- MLOps capability profile with explicit PyTorch and TensorFlow support
 
 ## Intended Commands
 
 After installing dependencies:
 
 ```bash
+docker compose up -d postgres
 npm install
 npm run dev:api
 npm run dev:web
 ```
+
+The API reads Postgres connection settings from `.env`/environment variables. A starter configuration is in [.env.example](/Users/rudan/Documents/hobby_projects/EnterpriseResilienceAgent/.env.example).

@@ -23,6 +23,7 @@ export type VerificationOutcome =
   | "WORSE"
   | "ROLLBACK_COMPLETED"
   | "ESCALATED";
+export type MlFramework = "pytorch" | "tensorflow";
 
 export interface TimeRange {
   start: string;
@@ -210,6 +211,21 @@ export interface CreateIncidentInput {
   severity: Severity;
   summary: string;
   trigger: string;
+}
+
+export interface MlFrameworkSupport {
+  framework: MlFramework;
+  supported: boolean;
+  executionMode: "python-service" | "external-worker";
+  useCases: string[];
+  notes: string;
+}
+
+export interface MlopsCapabilityProfile {
+  frameworks: MlFrameworkSupport[];
+  modelRegistry: string[];
+  evaluationModes: string[];
+  deploymentStrategies: string[];
 }
 
 const now = "2026-07-25T09:30:00.000Z";
@@ -481,3 +497,47 @@ export const seedAuditEvents: AuditEvent[] = [
     detail: "Environment, target service, rollback availability, cost ceiling, and blast radius checks all passed."
   }
 ];
+
+export const seedMlopsCapabilityProfile: MlopsCapabilityProfile = {
+  frameworks: [
+    {
+      framework: "pytorch",
+      supported: true,
+      executionMode: "python-service",
+      useCases: [
+        "deep learning model training",
+        "incident classification",
+        "root-cause ranking",
+        "embedding generation"
+      ],
+      notes: "Run PyTorch workloads in a dedicated Python ML service or worker to isolate native dependencies from the Node.js control plane."
+    },
+    {
+      framework: "tensorflow",
+      supported: true,
+      executionMode: "python-service",
+      useCases: [
+        "time-series anomaly detection",
+        "forecasting",
+        "classification",
+        "model serving and batch evaluation"
+      ],
+      notes: "Use TensorFlow in the same Python ML boundary with separate model packaging and evaluation pipelines when required."
+    }
+  ],
+  modelRegistry: [
+    "mlflow",
+    "vertex-ai-model-registry",
+    "sagemaker-model-registry"
+  ],
+  evaluationModes: [
+    "offline backtesting",
+    "shadow deployment",
+    "champion-challenger comparison"
+  ],
+  deploymentStrategies: [
+    "canary",
+    "blue-green",
+    "rollback-to-previous-model"
+  ]
+};

@@ -9,8 +9,8 @@ export class ServicesService {
     return this.store.listServices();
   }
 
-  getOne(serviceId: string) {
-    const service = this.store.getService(serviceId);
+  async getOne(serviceId: string) {
+    const service = await this.store.getService(serviceId);
     if (!service) {
       throw new NotFoundException(`Service ${serviceId} not found.`);
     }
@@ -18,21 +18,19 @@ export class ServicesService {
     return service;
   }
 
-  getHealth(serviceId: string) {
-    return this.getOne(serviceId).health;
+  async getHealth(serviceId: string) {
+    return (await this.getOne(serviceId)).health;
   }
 
-  getDependencies(serviceId: string) {
-    return this.getOne(serviceId).dependencies;
+  async getDependencies(serviceId: string) {
+    return (await this.getOne(serviceId)).dependencies;
   }
 
-  getIncidents(serviceId: string) {
-    return this.store
-      .listIncidents()
-      .filter((incident) => incident.primaryService === serviceId);
+  async getIncidents(serviceId: string) {
+    return (await this.store.listIncidents()).filter((incident) => incident.primaryService === serviceId);
   }
 
-  getChanges(serviceId: string) {
-    return this.getOne(serviceId).recentChanges;
+  async getChanges(serviceId: string) {
+    return (await this.getOne(serviceId)).recentChanges;
   }
 }
