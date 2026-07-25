@@ -26,6 +26,7 @@ This repository now contains the first runnable product slice from the engineeri
 - Seed data for an AWS checkout service with a GCP dependency
 - Registered AWS and GCP runbook examples and policy stubs
 - Postgres-backed persistence for incidents, services, approvals, runbooks, and audit events
+- Redis-backed idempotency caching and approval/execution locking
 - MLOps capability profile with explicit PyTorch and TensorFlow support
 
 ## Intended Commands
@@ -34,9 +35,10 @@ After installing dependencies:
 
 ```bash
 docker compose up -d postgres
+docker compose up -d redis
 npm install
 npm run dev:api
 npm run dev:web
 ```
 
-The API reads Postgres connection settings from `.env`/environment variables. A starter configuration is in [.env.example](/Users/rudan/Documents/hobby_projects/EnterpriseResilienceAgent/.env.example).
+The API reads Postgres and Redis connection settings from `.env`/environment variables. A starter configuration is in [.env.example](/Users/rudan/Documents/hobby_projects/EnterpriseResilienceAgent/.env.example).

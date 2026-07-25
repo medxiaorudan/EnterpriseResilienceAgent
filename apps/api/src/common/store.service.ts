@@ -7,6 +7,7 @@ import {
   type IncidentRecord,
   type IncidentStatus,
   type IncidentTimelineEntry,
+  type ExecutionRecord,
   type RegisteredRunbook,
   type VerificationResult,
   seedAuditEvents,
@@ -212,6 +213,18 @@ export class StoreService implements OnModuleInit {
     incident.updatedAt = verification.timestamp;
     await this.saveIncident(incident);
     return verification;
+  }
+
+  async setExecution(incidentId: string, execution: ExecutionRecord) {
+    const incident = await this.getIncident(incidentId);
+    if (!incident) {
+      return undefined;
+    }
+
+    incident.latestExecution = execution;
+    incident.updatedAt = execution.completedAt ?? execution.startedAt;
+    await this.saveIncident(incident);
+    return execution;
   }
 
   async listRunbooks() {
