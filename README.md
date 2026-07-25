@@ -1,6 +1,7 @@
 # Enterprise Resilience Agent
 
 A multicloud resilience platform that helps enterprise systems detect failures, explain impact, propose safe remediation, and recover through audited, policy-controlled runbooks.
+<img width="1693" height="929" alt="call_p64zxYJxIxlYuvFKdrM6HGVA" src="https://github.com/user-attachments/assets/c1dd3aec-a5bf-4640-93fb-37ed1cfe2341" />
 
 ## Workspace
 
