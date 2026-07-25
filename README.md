@@ -28,6 +28,7 @@ This repository now contains the first runnable product slice from the engineeri
 - Postgres-backed persistence for incidents, services, approvals, runbooks, and audit events
 - Redis-backed idempotency caching and approval/execution locking
 - MLOps capability profile with explicit PyTorch and TensorFlow support
+- AWS execution contract with allowed-target mapping, scale bounds, rollback requirement, and feature-flagged live ECS mode
 
 ## Intended Commands
 
@@ -42,3 +43,23 @@ npm run dev:web
 ```
 
 The API reads Postgres and Redis connection settings from `.env`/environment variables. A starter configuration is in [.env.example](/Users/rudan/Documents/hobby_projects/EnterpriseResilienceAgent/.env.example).
+
+## AWS Execution Contract
+
+Real ECS execution is disabled by default. To enable it, set:
+
+```bash
+AWS_ECS_LIVE_EXECUTION=true
+AWS_EXECUTION_ROLE_ARN=...
+AWS_ECS_ALLOWED_TARGETS='[{"serviceId":"checkout-api","clusterArn":"...","ecsServiceName":"checkout-api","region":"eu-west-1","minDesiredCount":2,"maxDesiredCount":8,"scaleStep":2,"rollbackRunbookId":"aws-ecs-restore-service-count","environments":["production"]}]'
+```
+
+Guardrails enforced before execution:
+
+- service must appear in `AWS_ECS_ALLOWED_TARGETS`
+- environment must be explicitly allowed
+- runbook must be `aws-ecs-scale-service`
+- rollback runbook must be present
+- scale bounds must be valid
+
+If `AWS_ECS_LIVE_EXECUTION` is `false`, the adapter stays in deterministic simulation mode.

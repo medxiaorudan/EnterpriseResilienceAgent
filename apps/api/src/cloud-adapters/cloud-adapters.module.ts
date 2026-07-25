@@ -1,9 +1,10 @@
 import { Module } from "@nestjs/common";
+import { AwsConfigService } from "./aws-config.service.js";
 import { AwsOperationsAdapter } from "./providers/aws-operations.adapter.js";
 import { CloudAdaptersService } from "./cloud-adapters.service.js";
 
 @Module({
-  providers: [AwsOperationsAdapter, CloudAdaptersService],
+  providers: [AwsConfigService, AwsOperationsAdapter, CloudAdaptersService],
   exports: [CloudAdaptersService]
 })
 export class CloudAdaptersModule {}

@@ -15,6 +15,8 @@
     "test:api": "npm run test --workspace @enterprise-resilience/api"
   },
   "dependencies": {
+    "@aws-sdk/client-cloudwatch": "^3.1095.0",
+    "@aws-sdk/client-ecs": "^3.1095.0",
     "ioredis": "^5.11.1",
     "pg": "^8.22.0"
   },

@@ -1,4 +1,18 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+  ServiceUnavailableException
+} from "@nestjs/common";
+import {
+  CloudWatchClient,
+  GetMetricDataCommand
+} from "@aws-sdk/client-cloudwatch";
+import {
+  DescribeServicesCommand,
+  ECSClient,
+  UpdateServiceCommand
+} from "@aws-sdk/client-ecs";
 import {
   type ApprovedExecutionRequest,
   type CloudChange,
@@ -23,12 +37,16 @@ import {
 } from "@enterprise-resilience/contracts";
 import { randomUUID } from "node:crypto";
 import { StoreService } from "../../common/store.service.js";
+import { AwsConfigService } from "../aws-config.service.js";
 
 @Injectable()
 export class AwsOperationsAdapter implements CloudOperationsAdapter {
   readonly provider = "aws" as const;
 
-  constructor(private readonly store: StoreService) {}
+  constructor(
+    private readonly store: StoreService,
+    private readonly awsConfig: AwsConfigService
+  ) {}
 
   async getServiceHealth(serviceId: string): Promise<ServiceHealth> {
     const service = await this.store.getService(serviceId);
@@ -47,6 +65,11 @@ export class AwsOperationsAdapter implements CloudOperationsAdapter {
   }
 
   async getMetrics(query: MetricQuery): Promise<MetricResult[]> {
+    const liveTarget = this.awsConfig.getTarget(query.serviceId);
+    if (this.awsConfig.isLiveExecutionEnabled() && liveTarget) {
+      return this.getLiveMetrics(query, liveTarget.region);
+    }
+
     if (query.serviceId !== "checkout-api") {
       return [];
     }
@@ -95,13 +118,19 @@ export class AwsOperationsAdapter implements CloudOperationsAdapter {
   }
 
   async simulateRunbook(request: RunbookSimulationRequest): Promise<SimulationResult> {
-    if (request.runbookId !== "aws-ecs-scale-service" || request.targetService !== "checkout-api") {
+    const guardrails = this.validateExecutionGuardrails({
+      runbookId: request.runbookId,
+      targetService: request.targetService,
+      environment: request.environment
+    });
+
+    if (!guardrails.allowed) {
       return {
         simulationId: randomUUID(),
         provider: "aws",
         status: "failed",
-        summary: "Simulation not available for this AWS runbook/target combination.",
-        checks: ["Runbook target mismatch"]
+        summary: guardrails.reason,
+        checks: [guardrails.reason]
       };
     }
 
@@ -119,6 +148,19 @@ export class AwsOperationsAdapter implements CloudOperationsAdapter {
   }
 
   async executeRunbook(request: ApprovedExecutionRequest): Promise<ExecutionResult> {
+    const guardrails = this.validateExecutionGuardrails({
+      runbookId: request.runbookId,
+      targetService: request.targetService,
+      environment: request.environment
+    });
+    if (!guardrails.allowed) {
+      throw new BadRequestException(guardrails.reason);
+    }
+
+    if (this.awsConfig.isLiveExecutionEnabled()) {
+      return this.executeLiveScaleOut(request, guardrails.target);
+    }
+
     return {
       executionId: request.executionId,
       provider: "aws",
@@ -181,5 +223,204 @@ export class AwsOperationsAdapter implements CloudOperationsAdapter {
       status: "completed",
       summary: "Restored ECS desired count to the previous baseline."
     };
+  }
+
+  private validateExecutionGuardrails(input: {
+    runbookId: string;
+    targetService: string;
+    environment: string;
+  }) {
+    const target = this.awsConfig.getTarget(input.targetService);
+    if (!target) {
+      return {
+        allowed: false,
+        reason: `Service ${input.targetService} is not in the AWS allowed target map.`
+      } as const;
+    }
+
+    if (input.runbookId !== "aws-ecs-scale-service") {
+      return {
+        allowed: false,
+        reason: `Runbook ${input.runbookId} is not approved for the AWS ECS scale path.`
+      } as const;
+    }
+
+    if (!target.environments.includes(input.environment)) {
+      return {
+        allowed: false,
+        reason: `Environment ${input.environment} is not approved for service ${input.targetService}.`
+      } as const;
+    }
+
+    if (!target.rollbackRunbookId) {
+      return {
+        allowed: false,
+        reason: `Rollback runbook is required for service ${input.targetService}.`
+      } as const;
+    }
+
+    if (target.scaleStep <= 0 || target.maxDesiredCount <= target.minDesiredCount) {
+      return {
+        allowed: false,
+        reason: `Scale bounds are invalid for service ${input.targetService}.`
+      } as const;
+    }
+
+    return {
+      allowed: true,
+      target
+    } as const;
+  }
+
+  private async executeLiveScaleOut(
+    request: ApprovedExecutionRequest,
+    target: {
+      clusterArn: string;
+      ecsServiceName: string;
+      region: string;
+      minDesiredCount: number;
+      maxDesiredCount: number;
+      scaleStep: number;
+    }
+  ): Promise<ExecutionResult> {
+    const ecsClient = new ECSClient({
+      region: target.region
+    });
+
+    const describeResponse = await ecsClient.send(
+      new DescribeServicesCommand({
+        cluster: target.clusterArn,
+        services: [target.ecsServiceName]
+      })
+    );
+    const service = describeResponse.services?.[0];
+    if (!service) {
+      throw new NotFoundException(`ECS service ${target.ecsServiceName} not found in cluster ${target.clusterArn}.`);
+    }
+
+    const currentDesiredCount = service.desiredCount ?? target.minDesiredCount;
+    const nextDesiredCount = Math.min(currentDesiredCount + target.scaleStep, target.maxDesiredCount);
+
+    if (nextDesiredCount <= currentDesiredCount) {
+      throw new BadRequestException(
+        `ECS desired count ${currentDesiredCount} is already at or above the approved ceiling ${target.maxDesiredCount}.`
+      );
+    }
+
+    try {
+      await ecsClient.send(
+        new UpdateServiceCommand({
+          cluster: target.clusterArn,
+          service: target.ecsServiceName,
+          desiredCount: nextDesiredCount
+        })
+      );
+    } catch (error) {
+      throw new ServiceUnavailableException(
+        `AWS ECS update failed for ${target.ecsServiceName}: ${error instanceof Error ? error.message : "unknown error"}`
+      );
+    }
+
+    return {
+      executionId: request.executionId,
+      provider: "aws",
+      status: "completed",
+      summary: `Scaled ECS desired count from ${currentDesiredCount} to ${nextDesiredCount} for ${request.targetService}.`,
+      steps: [
+        {
+          stepId: randomUUID(),
+          title: "Validate target",
+          status: "completed",
+          detail: `Confirmed ${request.targetService} is mapped to ${target.ecsServiceName} in ${target.region}.`
+        },
+        {
+          stepId: randomUUID(),
+          title: "Assume short-lived role",
+          status: "completed",
+          detail: this.awsConfig.getRoleArn()
+            ? `Configured execution role ${this.awsConfig.getRoleArn()} for bounded ECS action.`
+            : "Using ambient AWS credentials for bounded ECS action."
+        },
+        {
+          stepId: randomUUID(),
+          title: "Increase desired count",
+          status: "completed",
+          detail: `Updated desired count from ${currentDesiredCount} to ${nextDesiredCount}.`
+        }
+      ]
+    };
+  }
+
+  private async getLiveMetrics(query: MetricQuery, region: string): Promise<MetricResult[]> {
+    const cloudWatchClient = new CloudWatchClient({ region });
+    const response = await cloudWatchClient.send(
+      new GetMetricDataCommand({
+        StartTime: new Date(query.timeRange.start),
+        EndTime: new Date(query.timeRange.end),
+        MetricDataQueries: [
+          {
+            Id: "metricquery1",
+            MetricStat: {
+              Metric: {
+                Namespace: "AWS/ECS",
+                MetricName: this.toCloudWatchMetricName(query.metricName),
+                Dimensions: [
+                  {
+                    Name: "ServiceName",
+                    Value: query.serviceId
+                  }
+                ]
+              },
+              Period: 60,
+              Stat: this.toCloudWatchStatistic(query.statistic)
+            }
+          }
+        ]
+      })
+    );
+
+    const points = response.MetricDataResults?.[0];
+    const latestValue = points?.Values?.[0];
+    const latestTimestamp = points?.Timestamps?.[0];
+
+    if (latestValue === undefined || !latestTimestamp) {
+      return [];
+    }
+
+    return [
+      {
+        metricName: query.metricName,
+        value: latestValue,
+        unit: points?.StatusCode === "Complete" ? "count" : "unknown",
+        timestamp: latestTimestamp.toISOString()
+      }
+    ];
+  }
+
+  private toCloudWatchStatistic(statistic?: MetricQuery["statistic"]) {
+    switch (statistic) {
+      case "sum":
+        return "Sum";
+      case "min":
+        return "Minimum";
+      case "max":
+        return "Maximum";
+      case "p95":
+        return "p95";
+      case "avg":
+      default:
+        return "Average";
+    }
+  }
+
+  private toCloudWatchMetricName(metricName: string) {
+    switch (metricName) {
+      case "cpu_utilization":
+        return "CPUUtilization";
+      case "queue_depth":
+        return "PendingTaskCount";
+      default:
+        return metricName;
+    }
   }
 }

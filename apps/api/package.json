@@ -11,6 +11,8 @@
   },
   "dependencies": {
     "@enterprise-resilience/contracts": "0.1.0",
+    "@aws-sdk/client-cloudwatch": "^3.925.0",
+    "@aws-sdk/client-ecs": "^3.925.0",
     "@nestjs/common": "^11.0.0",
     "@nestjs/core": "^11.0.0",
     "@nestjs/platform-fastify": "^11.0.0",
@@ -23,7 +25,6 @@
     "@nestjs/cli": "^11.0.0",
     "@nestjs/testing": "^11.1.8",
     "@types/node": "^22.10.1",
-    "supertest": "^7.1.4",
     "typescript": "^5.7.2"
   }
 }
