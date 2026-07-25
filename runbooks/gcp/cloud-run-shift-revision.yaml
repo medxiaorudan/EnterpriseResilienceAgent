@@ -1,0 +1,16 @@
+runbook_id: gcp-cloud-run-shift-revision
+version: 2.1.0
+provider: gcp
+risk_level: medium
+owner: payments-reliability
+target_service: payment-routing
+summary: Shift Cloud Run traffic to the previous healthy revision and verify AWS checkout recovery.
+preconditions:
+  - previous healthy revision exists
+  - change freeze exception approved when required
+steps:
+  - validate_target
+  - assume_short_lived_service_account
+  - shift_traffic_to_previous_revision
+  - verify_gcp_request_error_rate
+  - verify_aws_checkout_success

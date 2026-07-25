@@ -1,0 +1,16 @@
+runbook_id: aws-ecs-replace-task
+version: 1.4.0
+provider: aws
+risk_level: low
+owner: platform-sre
+target_service: checkout-api
+summary: Drain and replace a single unhealthy ECS task without broad scaling.
+preconditions:
+  - at least one healthy task remains
+  - no active security hold
+steps:
+  - validate_target
+  - assume_short_lived_role
+  - drain_unhealthy_task
+  - start_replacement_task
+  - verify_healthy_task_count

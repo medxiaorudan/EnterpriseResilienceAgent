@@ -1,0 +1,19 @@
+runbook_id: aws-ecs-scale-service
+version: 3.2.1
+provider: aws
+risk_level: low
+owner: platform-sre
+target_service: checkout-api
+summary: Increase ECS task count within policy and verify recovery before cooldown restore.
+preconditions:
+  - database is healthy
+  - payment-routing dependency is healthy
+  - desired_count is below approved ceiling
+steps:
+  - validate_target
+  - assume_short_lived_role
+  - increase_desired_count
+  - verify_checkout_success_rate
+  - verify_latency
+  - schedule_restore_after_cooldown
+rollback_runbook_id: aws-ecs-restore-service-count

@@ -1,0 +1,16 @@
+{
+  "name": "enterprise-resilience-agent",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "npm@10.9.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:web": "npm run dev --workspace @enterprise-resilience/web",
+    "dev:api": "npm run start:dev --workspace @enterprise-resilience/api",
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  }
+}
