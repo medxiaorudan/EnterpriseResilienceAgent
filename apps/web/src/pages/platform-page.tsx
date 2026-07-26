@@ -65,6 +65,7 @@ export function PlatformPage() {
   const readyCount = components.filter((component) => component.status === "ready").length;
   const liveProviderCount = cloudComponents.filter((component) => component.status === "ready").length;
   const alertedTargets = providerTargets.filter((target) => target.metricAlertState && target.metricAlertState !== "normal");
+  const alertRouting = platform?.alertRouting;
 
   return (
     <div className="page-grid">
@@ -128,6 +129,57 @@ export function PlatformPage() {
               </div>
             ))}
           </div>
+        </Card>
+      </div>
+
+      <div className="two-column">
+        <Card title="Alert routing policy" subtitle="How sustained alerts leave the dashboard">
+          <div className="stack">
+            <div className="row-card">
+              <div>
+                <strong>Delivery mode</strong>
+                <p>{alertRouting?.summary ?? "Loading routing policy"}</p>
+              </div>
+              <Badge tone={alertRouting?.webhookConfigured ? "good" : "warning"}>
+                {alertRouting?.deliveryMode ?? "loading"}
+              </Badge>
+            </div>
+            <div className="row-card">
+              <div>
+                <strong>Escalation threshold</strong>
+                <p>
+                  {alertRouting
+                    ? `${alertRouting.escalationBreachStreak} breached collector cycle${alertRouting.escalationBreachStreak === 1 ? "" : "s"} before auto-escalation`
+                    : "Loading threshold"}
+                </p>
+              </div>
+            </div>
+            <div className="row-card">
+              <div>
+                <strong>Collector cadence</strong>
+                <p>
+                  {alertRouting
+                    ? `${Math.round(alertRouting.pollIntervalMs / 60000)} minute polling interval`
+                    : "Loading collector cadence"}
+                </p>
+              </div>
+            </div>
+          </div>
+        </Card>
+
+        <Card title="Auto-escalation targets" subtitle="Targets currently eligible for automatic incident creation">
+          {alertRouting?.autoEscalationTargets?.length ? (
+            <div className="activity-list">
+              {alertRouting.autoEscalationTargets.map((target) => (
+                <div key={target} className="activity-item">
+                  <strong>{target}</strong>
+                  <p className="muted">This target is currently in warning or breached state and will follow the configured escalation policy.</p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="muted">No target is currently in a state that could trigger automatic escalation.</p>
+          )}
         </Card>
       </div>
 

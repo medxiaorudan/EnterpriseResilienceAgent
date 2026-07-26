@@ -329,6 +329,14 @@ export interface PlatformStatusSummary {
   generatedAt: string;
   components: PlatformStatusComponent[];
   providerTargets: PlatformProviderTarget[];
+  alertRouting: {
+    deliveryMode: "webhook" | "audit-only";
+    webhookConfigured: boolean;
+    escalationBreachStreak: number;
+    pollIntervalMs: number;
+    autoEscalationTargets: string[];
+    summary: string;
+  };
   accessLinks: PlatformAccessLink[];
   nextSteps: string[];
 }

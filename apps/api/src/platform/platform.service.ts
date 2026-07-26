@@ -33,6 +33,9 @@ export class PlatformService {
     const awsLiveExecution = this.awsConfig.isLiveExecutionEnabled();
     const gcpLiveExecution = this.gcpConfig.isLiveExecutionEnabled();
     const deploymentMode = process.env.DEPLOYMENT_MODE ?? "cloud-ready";
+    const alertWebhookConfigured = Boolean(process.env.ALERT_WEBHOOK_URL);
+    const alertEscalationBreachStreak = Number(process.env.ALERT_ESCALATION_BREACH_STREAK ?? "2");
+    const metricPollIntervalMs = Number(process.env.METRIC_POLL_INTERVAL_MS ?? "300000");
     const auditEvents = await this.store.listAuditEvents();
     const latestSimulationByTarget = new Map<string, (typeof auditEvents)[number]>();
     for (const event of auditEvents) {
@@ -283,6 +286,18 @@ export class PlatformService {
         }
       ],
       providerTargets: [...awsTargets, ...gcpTargets],
+      alertRouting: {
+        deliveryMode: alertWebhookConfigured ? "webhook" : "audit-only",
+        webhookConfigured: alertWebhookConfigured,
+        escalationBreachStreak: alertEscalationBreachStreak,
+        pollIntervalMs: metricPollIntervalMs,
+        autoEscalationTargets: [...awsTargets, ...gcpTargets]
+          .filter((target) => target.metricAlertState === "warning" || target.metricAlertState === "breached")
+          .map((target) => `${target.provider.toUpperCase()} ${target.targetService}`),
+        summary: alertWebhookConfigured
+          ? `Webhook routing is active. Sustained breached targets auto-escalate after ${alertEscalationBreachStreak} breached collector cycles.`
+          : `Webhook routing is not configured. Alert delivery stays in audit only, and auto-escalation still triggers after ${alertEscalationBreachStreak} breached collector cycles.`
+      },
       accessLinks: [
         {
           label: "Executive overview",
