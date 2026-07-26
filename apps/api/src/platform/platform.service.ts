@@ -1,6 +1,8 @@
-import { Injectable } from "@nestjs/common";
-import type { PlatformStatusSummary } from "@enterprise-resilience/contracts";
+import { Injectable, NotFoundException } from "@nestjs/common";
+import { randomUUID } from "node:crypto";
+import type { AuthSession, CloudProvider, PlatformStatusSummary } from "@enterprise-resilience/contracts";
 import { AwsConfigService } from "../cloud-adapters/aws-config.service.js";
+import { CloudAdaptersService } from "../cloud-adapters/cloud-adapters.service.js";
 import { GcpConfigService } from "../cloud-adapters/gcp-config.service.js";
 import { StoreService } from "../common/store.service.js";
 
@@ -9,6 +11,7 @@ export class PlatformService {
   constructor(
     private readonly awsConfig: AwsConfigService,
     private readonly gcpConfig: GcpConfigService,
+    private readonly cloudAdapters: CloudAdaptersService,
     private readonly store: StoreService
   ) {}
 
@@ -74,7 +77,8 @@ export class PlatformService {
           summary: event.detail,
           timestamp: event.timestamp,
           actor: event.actor,
-          live: !event.summary.startsWith("Runbook simulation ")
+          live: !event.summary.startsWith("Runbook simulation "),
+          incidentId: event.incidentId
         }));
 
     const buildLastSuccessfulLiveAction = (
@@ -171,6 +175,7 @@ export class PlatformService {
           environment: (target.environments[0] ?? "production") as "production" | "staging" | "development",
           region: target.region,
           runbookId: "aws-ecs-scale-service",
+          rollbackRunbookId: target.rollbackRunbookId,
           summary: `ECS target ${target.ecsServiceName} can scale from ${target.minDesiredCount} to ${target.maxDesiredCount} in ${target.region}.`,
           recentActivity: buildTargetActivity("aws", target.serviceId, "aws-ecs-scale-service"),
           latestSimulation: this.toLatestSimulation(
@@ -185,6 +190,7 @@ export class PlatformService {
           environment: (target.environments[0] ?? "production") as "production" | "staging" | "development",
           region: target.region,
           runbookId: "gcp-cloud-run-shift-revision",
+          rollbackRunbookId: target.rollbackRunbookId,
           summary: `Cloud Run target ${target.serviceName} can shift ${target.shiftPercent}% of traffic to revision ${target.previousRevision}.`,
           recentActivity: buildTargetActivity("gcp", target.serviceId, "gcp-cloud-run-shift-revision"),
           latestSimulation: this.toLatestSimulation(
@@ -247,5 +253,54 @@ export class PlatformService {
       timestamp: event.timestamp,
       actor: event.actor
     };
+  }
+
+  async rollbackTarget(provider: CloudProvider, targetService: string, actor: AuthSession) {
+    const rollbackRunbookId = this.getRollbackRunbookId(provider, targetService);
+    if (!rollbackRunbookId) {
+      throw new NotFoundException(`No rollback path is configured for ${provider}:${targetService}.`);
+    }
+
+    const incidentId = await this.findLatestIncidentId(targetService, provider);
+    const adapter = this.cloudAdapters.getAdapter(provider);
+    const result = await adapter.rollback({
+      executionId: randomUUID(),
+      incidentId,
+      runbookId: rollbackRunbookId,
+      targetService
+    });
+
+    await this.store.recordAudit({
+      incidentId,
+      executionId: result.executionId,
+      actor: actor.userId,
+      provider,
+      targetService,
+      runbookId: rollbackRunbookId,
+      category: "execution",
+      summary: "Rollback completed",
+      detail: result.summary
+    });
+
+    return result;
+  }
+
+  private getRollbackRunbookId(provider: CloudProvider, targetService: string) {
+    if (provider === "aws") {
+      return this.awsConfig.getTarget(targetService)?.rollbackRunbookId;
+    }
+
+    return this.gcpConfig.getTarget(targetService)?.rollbackRunbookId;
+  }
+
+  private async findLatestIncidentId(targetService: string, provider: CloudProvider) {
+    const incidents = await this.store.listIncidents();
+    return incidents.find(
+      (incident) =>
+        incident.primaryService === targetService ||
+        incident.proposals.some(
+          (proposal) => proposal.targetService === targetService && proposal.cloudProvider === provider
+        )
+    )?.incidentId ?? `target:${provider}:${targetService}`;
   }
 }

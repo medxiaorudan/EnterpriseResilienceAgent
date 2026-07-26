@@ -466,4 +466,53 @@ const managerHeaders = {
     assert.equal(gcpTarget.recentActivity.some((item) => item.kind === "verification"), true);
     assert.match(gcpTarget.lastSuccessfulLiveAction.summary, /request errors normalized/i);
   });
+
+  test("runs rollback for a platform target and records incident-linked rollback activity", async () => {
+    const incident = await fakeStore.getIncident(incidentId);
+    incident.proposals = [
+      {
+        actionId: "shift-payment-routing",
+        runbookId: "gcp-cloud-run-shift-revision",
+        runbookVersion: "2.1.0",
+        cloudProvider: "gcp",
+        targetService: "payment-routing",
+        targetEnvironment: "production",
+        reason: "Cloud Run revision rollback is the safest cross-cloud recovery step.",
+        riskLevel: "medium",
+        confidenceLevel: "medium",
+        expectedResult: "Restore payment routing health while keeping checkout stable.",
+        estimatedCostPerHour: 0.25,
+        maximumDurationMinutes: 20,
+        preconditions: ["Previous healthy revision is available"],
+        verificationChecks: ["GCP request error rate normalizes", "AWS checkout success rate recovers"],
+        rollbackRunbookId: "gcp-cloud-run-shift-revision",
+        approvalPolicy: "human-review-required"
+      }
+    ];
+    await fakeStore.updateIncident(incident);
+
+    const rollbackResponse = await app.inject({
+      method: "POST",
+      url: "/api/platform/targets/gcp/payment-routing/rollback",
+      headers: managerHeaders
+    });
+    const rollbackBody = rollbackResponse.json();
+
+    assert.equal(rollbackResponse.statusCode, 201);
+    assert.equal(rollbackBody.provider, "gcp");
+    assert.match(rollbackBody.summary, /restored cloud run traffic/i);
+
+    const statusResponse = await app.inject({
+      method: "GET",
+      url: "/api/platform/status",
+      headers: managerHeaders
+    });
+    const statusBody = statusResponse.json();
+    const gcpTarget = statusBody.providerTargets.find((target) => target.provider === "gcp");
+    const rollbackActivity = gcpTarget.recentActivity.find((item) => item.kind === "rollback");
+
+    assert.equal(statusResponse.statusCode, 200);
+    assert.equal(rollbackActivity.incidentId, incidentId);
+    assert.match(rollbackActivity.summary, /restored cloud run traffic/i);
+  });
 });

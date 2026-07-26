@@ -276,6 +276,7 @@ export interface PlatformProviderTarget {
   summary: string;
   region?: string;
   runbookId?: string;
+  rollbackRunbookId?: string;
   recentActivity: Array<{
     kind: "simulation" | "approval" | "verification" | "rollback";
     status: "passed" | "failed" | "completed";
@@ -283,6 +284,7 @@ export interface PlatformProviderTarget {
     timestamp: string;
     actor: string;
     live: boolean;
+    incidentId?: string;
   }>;
   latestSimulation?: {
     status: "passed" | "failed";

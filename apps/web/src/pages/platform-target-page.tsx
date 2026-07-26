@@ -1,7 +1,7 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, Stat } from "@enterprise-resilience/ui";
 import { Link, useParams } from "react-router-dom";
-import { getPlatformStatus } from "@/api/platform.js";
+import { getPlatformStatus, rollbackPlatformTarget } from "@/api/platform.js";
 
 function formatRelativeTime(timestamp: string) {
   const deltaMs = Date.now() - new Date(timestamp).getTime();
@@ -25,10 +25,18 @@ function trendTone(status: "passed" | "failed" | "completed") {
 }
 
 export function PlatformTargetPage() {
+  const queryClient = useQueryClient();
   const { provider = "", targetService = "" } = useParams();
   const platformQuery = useQuery({
     queryKey: ["platform-status"],
     queryFn: getPlatformStatus
+  });
+  const rollbackMutation = useMutation({
+    mutationFn: () => rollbackPlatformTarget(provider as "aws" | "gcp", targetService),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["platform-status"] });
+      await queryClient.invalidateQueries({ queryKey: ["audit-events"] });
+    }
   });
 
   const platform = platformQuery.data;
@@ -51,6 +59,17 @@ export function PlatformTargetPage() {
         </p>
         <h2>{target.targetService}</h2>
         <p>{target.summary}</p>
+        {target.rollbackRunbookId ? (
+          <div className="actions-row">
+            <button
+              className="secondary-button"
+              onClick={() => rollbackMutation.mutate()}
+              disabled={rollbackMutation.isPending}
+            >
+              {rollbackMutation.isPending ? "Running rollback..." : "Run rollback"}
+            </button>
+          </div>
+        ) : null}
       </section>
 
       <div className="stats-grid">
@@ -131,6 +150,11 @@ export function PlatformTargetPage() {
                 <p className="muted">
                   {activity.actor} · {new Date(activity.timestamp).toLocaleString()}
                 </p>
+                {activity.incidentId ? (
+                  <Link to={`/incidents/${activity.incidentId}`} className="target-link">
+                    Open incident {activity.incidentId}
+                  </Link>
+                ) : null}
               </div>
             ))}
           </div>
