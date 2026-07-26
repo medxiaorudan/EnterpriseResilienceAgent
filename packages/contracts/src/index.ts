@@ -297,6 +297,10 @@ export interface PlatformProviderTarget {
     timestamp: string;
     actor: string;
   };
+  metricAlertState?: "normal" | "warning" | "breached";
+  metricAlertSummary?: string;
+  lastCollectedAt?: string;
+  breachedMetrics?: string[];
 }
 
 export interface PlatformStatusSummary {

@@ -171,6 +171,16 @@ export function PlatformTargetPage() {
         </p>
         <h2>{target.targetService}</h2>
         <p>{target.summary}</p>
+        <div className="provider-chip-row">
+          <span className="provider-chip provider-chip-muted">
+            monitor: {target.metricAlertState ?? "normal"}
+          </span>
+          {target.lastCollectedAt ? (
+            <span className="provider-chip provider-chip-muted">
+              last sample: {formatRelativeTime(target.lastCollectedAt)}
+            </span>
+          ) : null}
+        </div>
         {target.rollbackRunbookId ? (
           <div className="actions-row">
             <button
@@ -218,6 +228,9 @@ export function PlatformTargetPage() {
               <span className="provider-chip provider-chip-muted">
                 state: {approvalContext?.state ?? "loading"}
               </span>
+              <span className="provider-chip provider-chip-muted">
+                metrics: {target.metricAlertState ?? "normal"}
+              </span>
               {approvalContext?.targetEnvironment ? (
                 <span className="provider-chip provider-chip-muted">
                   env: {approvalContext.targetEnvironment}
@@ -227,6 +240,7 @@ export function PlatformTargetPage() {
             {approvalContext?.runbookId ? (
               <p className="muted">Runbook: {approvalContext.runbookId}</p>
             ) : null}
+            {target.metricAlertSummary ? <p className="muted">{target.metricAlertSummary}</p> : null}
           </div>
           {relatedIncidents.length > 0 ? (
             <div className="activity-list">

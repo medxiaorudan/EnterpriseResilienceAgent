@@ -16,6 +16,16 @@ function componentTone(status: "ready" | "configuration-needed" | "disabled") {
   return "default" as const;
 }
 
+function metricAlertTone(state?: "normal" | "warning" | "breached") {
+  if (state === "breached") {
+    return "danger" as const;
+  }
+  if (state === "warning") {
+    return "warning" as const;
+  }
+  return "good" as const;
+}
+
 function formatRelativeTime(timestamp: string) {
   const deltaMs = Date.now() - new Date(timestamp).getTime();
   const deltaMinutes = Math.max(1, Math.floor(deltaMs / 60000));
@@ -54,6 +64,7 @@ export function PlatformPage() {
   const cloudComponents = components.filter((component) => component.kind === "cloud-adapter");
   const readyCount = components.filter((component) => component.status === "ready").length;
   const liveProviderCount = cloudComponents.filter((component) => component.status === "ready").length;
+  const alertedTargets = providerTargets.filter((target) => target.metricAlertState && target.metricAlertState !== "normal");
 
   return (
     <div className="page-grid">
@@ -81,6 +92,9 @@ export function PlatformPage() {
         </Card>
         <Card>
           <Stat label="Live cloud lanes" value={String(liveProviderCount)} hint="Providers enabled for bounded execution" />
+        </Card>
+        <Card>
+          <Stat label="Metric alerts" value={String(alertedTargets.length)} hint="Targets with sustained warning or breach signals" />
         </Card>
       </div>
 
@@ -139,6 +153,9 @@ export function PlatformPage() {
                       <div className="provider-chip-row">
                         <span className="provider-chip">{target.targetService}</span>
                         <span className="provider-chip provider-chip-muted">{target.executionMode}</span>
+                        <Badge tone={metricAlertTone(target.metricAlertState)}>
+                          {target.metricAlertState ?? "normal"}
+                        </Badge>
                       </div>
                       <Link
                         to={`/platform/${target.provider}/${target.targetService}`}
@@ -155,6 +172,10 @@ export function PlatformPage() {
                         {target.lastSuccessfulLiveAction
                           ? formatRelativeTime(target.lastSuccessfulLiveAction.timestamp)
                           : "not recorded"}
+                      </p>
+                      <p className="muted">
+                        Metric monitor: {target.metricAlertSummary ?? "Waiting for collector history"}{" "}
+                        {target.lastCollectedAt ? `· ${formatRelativeTime(target.lastCollectedAt)}` : ""}
                       </p>
                       {target.latestSimulation ? (
                         <div className="simulation-box">

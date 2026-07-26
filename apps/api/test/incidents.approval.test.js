@@ -550,6 +550,32 @@ const managerHeaders = {
     assert.match(rollbackActivity.summary, /restored cloud run traffic/i);
   });
 
+  test("surfaces sustained metric breaches in platform status", async () => {
+    for (const minute of [0, 5, 10]) {
+      await fakeStore.appendMetricSample({
+        serviceId: "payment-routing",
+        metricName: "request_error_rate",
+        unit: "%",
+        value: 2.2,
+        timestamp: `2026-07-26T22:${String(minute).padStart(2, "0")}:00.000Z`
+      });
+    }
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/platform/status",
+      headers: managerHeaders
+    });
+    const body = response.json();
+    const gcpTarget = body.providerTargets.find((target) => target.provider === "gcp");
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(gcpTarget.metricAlertState, "breached");
+    assert.match(gcpTarget.metricAlertSummary, /request error rate/i);
+    assert.equal(gcpTarget.breachedMetrics.includes("Request error rate"), true);
+    assert.equal(gcpTarget.lastCollectedAt, "2026-07-26T22:10:00.000Z");
+  });
+
   test("exposes service approval context and metric trends for a target service", async () => {
     const incident = await fakeStore.getIncident(incidentId);
     incident.proposals = [

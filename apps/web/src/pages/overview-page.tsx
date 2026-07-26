@@ -27,6 +27,7 @@ export function OverviewPage() {
   const gcpTargets = providerTargets.filter((target) => target.provider === "gcp");
   const gcpSimulationLane = gcpTargets[0];
   const providerCoverage = new Set(services.map((service) => service.cloudProvider));
+  const alertedTargets = providerTargets.filter((target) => target.metricAlertState && target.metricAlertState !== "normal");
 
   return (
     <div className="page-grid">
@@ -51,6 +52,9 @@ export function OverviewPage() {
         </Card>
         <Card>
           <Stat label="Low-risk actions" value="3" hint="Registered runbooks available in the catalog" />
+        </Card>
+        <Card>
+          <Stat label="Metric alerts" value={String(alertedTargets.length)} hint="Targets with sustained threshold pressure" />
         </Card>
       </div>
 
@@ -102,6 +106,19 @@ export function OverviewPage() {
                 <p>{[...providerCoverage].map((provider) => provider.toUpperCase()).join(" · ") || "Loading providers"}</p>
               </div>
             </div>
+            <div className="row-card">
+              <div>
+                <strong>Sustained metric alerts</strong>
+                <p>
+                  {alertedTargets.length > 0
+                    ? alertedTargets.map((target) => `${target.provider.toUpperCase()} ${target.targetService}`).join(" · ")
+                    : "No target is currently holding a sustained warning or breach."}
+                </p>
+              </div>
+              <Badge tone={alertedTargets.length > 0 ? "warning" : "good"}>
+                {alertedTargets.length > 0 ? "attention" : "stable"}
+              </Badge>
+            </div>
           </div>
         </Card>
       </div>
@@ -115,6 +132,11 @@ export function OverviewPage() {
             </div>
             <strong>{gcpSimulationLane.targetService}</strong>
             <p>{gcpSimulationLane.summary}</p>
+            <div className="provider-chip-row">
+              <span className="provider-chip provider-chip-muted">
+                monitor: {gcpSimulationLane.metricAlertState ?? "normal"}
+              </span>
+            </div>
             {gcpSimulationLane.latestSimulation ? (
               <div className="simulation-box">
                 <p>{gcpSimulationLane.latestSimulation.summary}</p>

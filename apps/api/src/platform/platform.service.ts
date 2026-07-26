@@ -5,6 +5,7 @@ import { AwsConfigService } from "../cloud-adapters/aws-config.service.js";
 import { CloudAdaptersService } from "../cloud-adapters/cloud-adapters.service.js";
 import { GcpConfigService } from "../cloud-adapters/gcp-config.service.js";
 import { StoreService } from "../common/store.service.js";
+import { getMetricDefinitions, getThresholdStatus } from "../services/metric-policy.js";
 
 @Injectable()
 export class PlatformService {
@@ -106,6 +107,101 @@ export class PlatformService {
       };
     };
 
+    const buildMetricAlert = async (provider: "aws" | "gcp", targetService: string) => {
+      const definitions = getMetricDefinitions(provider);
+      const metricHistory = await this.store.listMetricHistory(
+        targetService,
+        definitions.map((metric) => metric.metricName),
+        3
+      );
+
+      const collectedAt = Math.max(
+        0,
+        ...[...metricHistory.values()].flat().map((sample) => new Date(sample.timestamp).getTime())
+      );
+      const breachedMetrics = definitions
+        .filter((metric) => {
+          const samples = metricHistory.get(metric.metricName) ?? [];
+          return samples.length === 3 && samples.every((sample) => getThresholdStatus(metric, sample.value) === "breached");
+        })
+        .map((metric) => metric.label);
+      const warningMetrics = definitions
+        .filter((metric) => {
+          const samples = metricHistory.get(metric.metricName) ?? [];
+          return (
+            samples.length === 3 &&
+            breachedMetrics.includes(metric.label) === false &&
+            samples.every((sample) => getThresholdStatus(metric, sample.value) !== "within-threshold")
+          );
+        })
+        .map((metric) => metric.label);
+
+      if (breachedMetrics.length > 0) {
+        return {
+          metricAlertState: "breached" as const,
+          metricAlertSummary: `${breachedMetrics.join(", ")} stayed breached across the last 3 samples.`,
+          lastCollectedAt: collectedAt ? new Date(collectedAt).toISOString() : undefined,
+          breachedMetrics
+        };
+      }
+
+      if (warningMetrics.length > 0) {
+        return {
+          metricAlertState: "warning" as const,
+          metricAlertSummary: `${warningMetrics.join(", ")} stayed elevated across the last 3 samples.`,
+          lastCollectedAt: collectedAt ? new Date(collectedAt).toISOString() : undefined,
+          breachedMetrics: warningMetrics
+        };
+      }
+
+      return {
+        metricAlertState: "normal" as const,
+        metricAlertSummary: collectedAt
+          ? "Recent samples remain within policy thresholds."
+          : "Metric polling has not collected enough history yet.",
+        lastCollectedAt: collectedAt ? new Date(collectedAt).toISOString() : undefined,
+        breachedMetrics: []
+      };
+    };
+
+    const awsTargets = await Promise.all(
+      this.awsConfig.listTargets().map(async (target) => ({
+        provider: "aws" as const,
+        executionMode: awsLiveExecution ? ("live-enabled" as const) : ("simulation-only" as const),
+        targetService: target.serviceId,
+        environment: (target.environments[0] ?? "production") as "production" | "staging" | "development",
+        region: target.region,
+        runbookId: "aws-ecs-scale-service",
+        rollbackRunbookId: target.rollbackRunbookId,
+        summary: `ECS target ${target.ecsServiceName} can scale from ${target.minDesiredCount} to ${target.maxDesiredCount} in ${target.region}.`,
+        recentActivity: buildTargetActivity("aws", target.serviceId, "aws-ecs-scale-service"),
+        latestSimulation: this.toLatestSimulation(
+          latestSimulationByTarget.get(`aws:${target.serviceId}:aws-ecs-scale-service`)
+        ),
+        lastSuccessfulLiveAction: buildLastSuccessfulLiveAction("aws", target.serviceId, "aws-ecs-scale-service"),
+        ...(await buildMetricAlert("aws", target.serviceId))
+      }))
+    );
+
+    const gcpTargets = await Promise.all(
+      this.gcpConfig.listTargets().map(async (target) => ({
+        provider: "gcp" as const,
+        executionMode: gcpLiveExecution ? ("live-enabled" as const) : ("simulation-only" as const),
+        targetService: target.serviceId,
+        environment: (target.environments[0] ?? "production") as "production" | "staging" | "development",
+        region: target.region,
+        runbookId: "gcp-cloud-run-shift-revision",
+        rollbackRunbookId: target.rollbackRunbookId,
+        summary: `Cloud Run target ${target.serviceName} can shift ${target.shiftPercent}% of traffic to revision ${target.previousRevision}.`,
+        recentActivity: buildTargetActivity("gcp", target.serviceId, "gcp-cloud-run-shift-revision"),
+        latestSimulation: this.toLatestSimulation(
+          latestSimulationByTarget.get(`gcp:${target.serviceId}:gcp-cloud-run-shift-revision`)
+        ),
+        lastSuccessfulLiveAction: buildLastSuccessfulLiveAction("gcp", target.serviceId, "gcp-cloud-run-shift-revision"),
+        ...(await buildMetricAlert("gcp", target.serviceId))
+      }))
+    );
+
     return {
       productName: "Enterprise Resilience Agent",
       deploymentMode: deploymentMode === "local" || deploymentMode === "container" ? deploymentMode : "cloud-ready",
@@ -167,38 +263,7 @@ export class PlatformService {
           url: "docs/user-guide.md"
         }
       ],
-      providerTargets: [
-        ...this.awsConfig.listTargets().map((target) => ({
-          provider: "aws" as const,
-          executionMode: awsLiveExecution ? ("live-enabled" as const) : ("simulation-only" as const),
-          targetService: target.serviceId,
-          environment: (target.environments[0] ?? "production") as "production" | "staging" | "development",
-          region: target.region,
-          runbookId: "aws-ecs-scale-service",
-          rollbackRunbookId: target.rollbackRunbookId,
-          summary: `ECS target ${target.ecsServiceName} can scale from ${target.minDesiredCount} to ${target.maxDesiredCount} in ${target.region}.`,
-          recentActivity: buildTargetActivity("aws", target.serviceId, "aws-ecs-scale-service"),
-          latestSimulation: this.toLatestSimulation(
-            latestSimulationByTarget.get(`aws:${target.serviceId}:aws-ecs-scale-service`)
-          ),
-          lastSuccessfulLiveAction: buildLastSuccessfulLiveAction("aws", target.serviceId, "aws-ecs-scale-service")
-        })),
-        ...this.gcpConfig.listTargets().map((target) => ({
-          provider: "gcp" as const,
-          executionMode: gcpLiveExecution ? ("live-enabled" as const) : ("simulation-only" as const),
-          targetService: target.serviceId,
-          environment: (target.environments[0] ?? "production") as "production" | "staging" | "development",
-          region: target.region,
-          runbookId: "gcp-cloud-run-shift-revision",
-          rollbackRunbookId: target.rollbackRunbookId,
-          summary: `Cloud Run target ${target.serviceName} can shift ${target.shiftPercent}% of traffic to revision ${target.previousRevision}.`,
-          recentActivity: buildTargetActivity("gcp", target.serviceId, "gcp-cloud-run-shift-revision"),
-          latestSimulation: this.toLatestSimulation(
-            latestSimulationByTarget.get(`gcp:${target.serviceId}:gcp-cloud-run-shift-revision`)
-          ),
-          lastSuccessfulLiveAction: buildLastSuccessfulLiveAction("gcp", target.serviceId, "gcp-cloud-run-shift-revision")
-        }))
-      ],
+      providerTargets: [...awsTargets, ...gcpTargets],
       accessLinks: [
         {
           label: "Executive overview",
