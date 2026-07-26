@@ -164,21 +164,67 @@ export function PlatformPage() {
                 </p>
               </div>
             </div>
+            <div className="row-card">
+              <div>
+                <strong>Retry policy</strong>
+                <p>
+                  {alertRouting
+                    ? `${alertRouting.retryCount} retr${alertRouting.retryCount === 1 ? "y" : "ies"} after the first delivery attempt`
+                    : "Loading retry policy"}
+                </p>
+              </div>
+            </div>
           </div>
         </Card>
 
-        <Card title="Auto-escalation targets" subtitle="Targets currently eligible for automatic incident creation">
-          {alertRouting?.autoEscalationTargets?.length ? (
+        <Card title="Notification channels" subtitle="Current channel delivery health and auto-escalation eligibility">
+          {alertRouting?.channels?.length ? (
             <div className="activity-list">
-              {alertRouting.autoEscalationTargets.map((target) => (
-                <div key={target} className="activity-item">
-                  <strong>{target}</strong>
-                  <p className="muted">This target is currently in warning or breached state and will follow the configured escalation policy.</p>
+              {alertRouting.channels.map((channel) => (
+                <div key={channel.name} className="activity-item">
+                  <div className="provider-chip-row">
+                    <span className="provider-chip provider-chip-muted">{channel.name}</span>
+                    <span className="provider-chip provider-chip-muted">{channel.deliveryMode}</span>
+                    <Badge
+                      tone={
+                        channel.lastDeliveryStatus === "sent"
+                          ? "good"
+                          : channel.lastDeliveryStatus === "failed"
+                            ? "danger"
+                            : channel.lastDeliveryStatus === "skipped"
+                              ? "warning"
+                              : "default"
+                      }
+                    >
+                      {channel.lastDeliveryStatus}
+                    </Badge>
+                  </div>
+                  <p className="muted">
+                    {channel.lastDeliverySummary ?? "No delivery attempt is recorded yet for this channel."}
+                  </p>
+                  <p className="muted">
+                    {channel.lastDeliveryAt
+                      ? `Last activity ${formatRelativeTime(channel.lastDeliveryAt)}`
+                      : "No recent delivery activity"}
+                  </p>
                 </div>
               ))}
+              {alertRouting.autoEscalationTargets.length ? (
+                <div className="activity-item">
+                  <strong>Auto-escalation targets</strong>
+                  <p className="muted">
+                    {alertRouting.autoEscalationTargets.join(" · ")}
+                  </p>
+                </div>
+              ) : (
+                <div className="activity-item">
+                  <strong>Auto-escalation targets</strong>
+                  <p className="muted">No target is currently in a state that could trigger automatic escalation.</p>
+                </div>
+              )}
             </div>
           ) : (
-            <p className="muted">No target is currently in a state that could trigger automatic escalation.</p>
+            <p className="muted">No notification channel metadata is available yet.</p>
           )}
         </Card>
       </div>

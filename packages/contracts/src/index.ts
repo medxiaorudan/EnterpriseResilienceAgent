@@ -330,10 +330,19 @@ export interface PlatformStatusSummary {
   components: PlatformStatusComponent[];
   providerTargets: PlatformProviderTarget[];
   alertRouting: {
-    deliveryMode: "webhook" | "audit-only";
+    deliveryMode: "webhook" | "multi-webhook" | "audit-only";
     webhookConfigured: boolean;
     escalationBreachStreak: number;
     pollIntervalMs: number;
+    retryCount: number;
+    channels: Array<{
+      name: string;
+      deliveryMode: "webhook" | "audit-only";
+      configured: boolean;
+      lastDeliveryStatus: "sent" | "failed" | "skipped" | "unknown";
+      lastDeliveryAt?: string;
+      lastDeliverySummary?: string;
+    }>;
     autoEscalationTargets: string[];
     summary: string;
   };

@@ -33,7 +33,8 @@ export class PlatformService {
     const awsLiveExecution = this.awsConfig.isLiveExecutionEnabled();
     const gcpLiveExecution = this.gcpConfig.isLiveExecutionEnabled();
     const deploymentMode = process.env.DEPLOYMENT_MODE ?? "cloud-ready";
-    const alertWebhookConfigured = Boolean(process.env.ALERT_WEBHOOK_URL);
+    const alertChannels = this.alertRouting.getChannelConfigs();
+    const alertWebhookConfigured = alertChannels.some((channel) => channel.configured);
     const alertEscalationBreachStreak = Number(process.env.ALERT_ESCALATION_BREACH_STREAK ?? "2");
     const metricPollIntervalMs = Number(process.env.METRIC_POLL_INTERVAL_MS ?? "300000");
     const auditEvents = await this.store.listAuditEvents();
@@ -54,6 +55,13 @@ export class PlatformService {
         latestSimulationByTarget.set(key, event);
       }
     }
+    const notificationEvents = auditEvents.filter((event) =>
+      [
+        "Target alert notification sent",
+        "Target alert notification failed",
+        "Target alert notification skipped"
+      ].includes(event.summary)
+    );
 
     const buildTargetActivity = (
       provider: "aws" | "gcp",
@@ -287,10 +295,33 @@ export class PlatformService {
       ],
       providerTargets: [...awsTargets, ...gcpTargets],
       alertRouting: {
-        deliveryMode: alertWebhookConfigured ? "webhook" : "audit-only",
+        deliveryMode:
+          alertChannels.filter((channel) => channel.deliveryMode === "webhook").length > 1
+            ? "multi-webhook"
+            : alertWebhookConfigured
+              ? "webhook"
+              : "audit-only",
         webhookConfigured: alertWebhookConfigured,
         escalationBreachStreak: alertEscalationBreachStreak,
         pollIntervalMs: metricPollIntervalMs,
+        retryCount: this.alertRouting.getRetryCount(),
+        channels: alertChannels.map((channel) => {
+          const lastEvent = notificationEvents.find((event) => event.detail.includes(`channel=${channel.name};`));
+          return {
+            name: channel.name,
+            deliveryMode: channel.deliveryMode,
+            configured: channel.configured,
+            lastDeliveryStatus: !lastEvent
+              ? ("unknown" as const)
+              : lastEvent.summary === "Target alert notification sent"
+                ? ("sent" as const)
+                : lastEvent.summary === "Target alert notification failed"
+                  ? ("failed" as const)
+                  : ("skipped" as const),
+            lastDeliveryAt: lastEvent?.timestamp,
+            lastDeliverySummary: lastEvent?.detail
+          };
+        }),
         autoEscalationTargets: [...awsTargets, ...gcpTargets]
           .filter((target) => target.metricAlertState === "warning" || target.metricAlertState === "breached")
           .map((target) => `${target.provider.toUpperCase()} ${target.targetService}`),

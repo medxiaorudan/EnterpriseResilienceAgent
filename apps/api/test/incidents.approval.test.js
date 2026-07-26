@@ -8,6 +8,7 @@ import { seedIncidents, seedRunbooks, seedServices } from "@enterprise-resilienc
 import { AppModule } from "../dist/app.module.js";
 import { RedisService } from "../dist/common/redis.service.js";
 import { StoreService } from "../dist/common/store.service.js";
+import { AlertRoutingService } from "../dist/services/alert-routing.service.js";
 import { MetricsCollectorService } from "../dist/services/metrics-collector.service.js";
 
 class FakeStoreService {
@@ -268,6 +269,7 @@ describe("incident approval API", () => {
   let fakeStore;
   let fakeRedis;
   let metricsCollector;
+  let alertRoutingService;
 const incidentId = "INC-2026-0042";
 const managerHeaders = {
   "x-era-user": "manager.demo",
@@ -292,6 +294,7 @@ const managerHeaders = {
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
     metricsCollector = app.get(MetricsCollectorService);
+    alertRoutingService = app.get(AlertRoutingService);
   });
 
   afterEach(async () => {
@@ -734,6 +737,51 @@ const managerHeaders = {
     assert.ok(alert.incidentId);
     assert.match(incident.title, /checkout-api sustained breached metric alert/i);
     assert.match(escalationEvent.detail, /auto-escalated/i);
+  });
+
+  test("reports multi-channel routing policy and last delivery outcomes", async () => {
+    const previousSingle = process.env.ALERT_WEBHOOK_URL;
+    const previousMulti = process.env.ALERT_WEBHOOK_URLS;
+    const previousRetry = process.env.ALERT_WEBHOOK_RETRY_COUNT;
+    const originalFetch = global.fetch;
+
+    process.env.ALERT_WEBHOOK_URL = "https://alerts-primary.example.test";
+    process.env.ALERT_WEBHOOK_URLS = "https://alerts-secondary.example.test";
+    process.env.ALERT_WEBHOOK_RETRY_COUNT = "2";
+    global.fetch = async () =>
+      ({
+        ok: true,
+        status: 200
+      });
+
+    try {
+      await alertRoutingService.route({
+        provider: "gcp",
+        targetService: "payment-routing",
+        state: "warning",
+        summary: "Synthetic delivery check",
+        eventType: "state-changed"
+      });
+
+      const response = await app.inject({
+        method: "GET",
+        url: "/api/platform/status",
+        headers: managerHeaders
+      });
+      const body = response.json();
+
+      assert.equal(response.statusCode, 200);
+      assert.equal(body.alertRouting.deliveryMode, "multi-webhook");
+      assert.equal(body.alertRouting.retryCount, 2);
+      assert.equal(body.alertRouting.channels.length, 2);
+      assert.equal(body.alertRouting.channels[0].lastDeliveryStatus, "sent");
+      assert.match(body.alertRouting.channels[0].lastDeliverySummary, /channel=primary-webhook/i);
+    } finally {
+      process.env.ALERT_WEBHOOK_URL = previousSingle;
+      process.env.ALERT_WEBHOOK_URLS = previousMulti;
+      process.env.ALERT_WEBHOOK_RETRY_COUNT = previousRetry;
+      global.fetch = originalFetch;
+    }
   });
 
   test("exposes service approval context and metric trends for a target service", async () => {
