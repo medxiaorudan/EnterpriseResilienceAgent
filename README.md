@@ -10,7 +10,7 @@ It is designed to be easy to explain to non-technical users:
 - a person approves or escalates
 - the platform records the result
 
-https://github.com/user-attachments/assets/863e7649-18e2-4826-9c6c-35a7f3be2718
+https://github.com/user-attachments/assets/55eda86d-498e-47ef-acb6-c5e5916ea34a
 
 ## What This Project Does
 
