@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { Test } from "@nestjs/testing";
 import { FastifyAdapter } from "@nestjs/platform-fastify";
-import { seedIncidents, seedRunbooks } from "@enterprise-resilience/contracts";
+import { seedIncidents, seedRunbooks, seedServices } from "@enterprise-resilience/contracts";
 import { AppModule } from "../dist/app.module.js";
 import { RedisService } from "../dist/common/redis.service.js";
 import { StoreService } from "../dist/common/store.service.js";
@@ -14,12 +14,24 @@ class FakeStoreService {
     this.incidents = new Map();
     this.auditEvents = [];
     this.runbooks = new Map();
+    this.services = new Map();
     for (const incident of structuredClone(seed)) {
       this.incidents.set(incident.incidentId, incident);
     }
     for (const runbook of structuredClone(seedRunbooks)) {
       this.runbooks.set(runbook.runbookId, runbook);
     }
+    for (const service of structuredClone(seedServices)) {
+      this.services.set(service.serviceId, service);
+    }
+  }
+
+  async listServices() {
+    return [...this.services.values()];
+  }
+
+  async getService(serviceId) {
+    return this.services.get(serviceId);
   }
 
   async listIncidents() {
@@ -514,5 +526,57 @@ const managerHeaders = {
     assert.equal(statusResponse.statusCode, 200);
     assert.equal(rollbackActivity.incidentId, incidentId);
     assert.match(rollbackActivity.summary, /restored cloud run traffic/i);
+  });
+
+  test("exposes service approval context and metric trends for a target service", async () => {
+    const incident = await fakeStore.getIncident(incidentId);
+    incident.proposals = [
+      {
+        actionId: "shift-payment-routing",
+        runbookId: "gcp-cloud-run-shift-revision",
+        runbookVersion: "2.1.0",
+        cloudProvider: "gcp",
+        targetService: "payment-routing",
+        targetEnvironment: "production",
+        reason: "Cloud Run revision rollback is the safest cross-cloud recovery step.",
+        riskLevel: "medium",
+        confidenceLevel: "medium",
+        expectedResult: "Restore payment routing health while keeping checkout stable.",
+        estimatedCostPerHour: 0.25,
+        maximumDurationMinutes: 20,
+        preconditions: ["Previous healthy revision is available"],
+        verificationChecks: ["GCP request error rate normalizes", "AWS checkout success rate recovers"],
+        rollbackRunbookId: "gcp-cloud-run-shift-revision",
+        approvalPolicy: "human-review-required"
+      }
+    ];
+    await fakeStore.updateIncident(incident);
+
+    const approvalResponse = await app.inject({
+      method: "GET",
+      url: "/api/services/payment-routing/approval-context",
+      headers: managerHeaders
+    });
+    const approvalBody = approvalResponse.json();
+
+    assert.equal(approvalResponse.statusCode, 200);
+    assert.equal(approvalBody.state, "AWAITING_APPROVAL");
+    assert.equal(approvalBody.approvalPolicy, "human-review-required");
+    assert.equal(approvalBody.requiresHumanApproval, true);
+    assert.equal(approvalBody.runbookId, "gcp-cloud-run-shift-revision");
+    assert.equal(approvalBody.targetEnvironment, "production");
+    assert.equal(approvalBody.incidentId, incidentId);
+
+    const metricsResponse = await app.inject({
+      method: "GET",
+      url: "/api/services/payment-routing/metrics",
+      headers: managerHeaders
+    });
+    const metricsBody = metricsResponse.json();
+
+    assert.equal(metricsResponse.statusCode, 200);
+    assert.equal(metricsBody.length, 3);
+    assert.equal(metricsBody[0].points.length, 6);
+    assert.equal(typeof metricsBody[0].points[0].value, "number");
   });
 });

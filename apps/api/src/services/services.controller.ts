@@ -30,6 +30,16 @@ export class ServicesController {
     return this.servicesService.getIncidents(serviceId);
   }
 
+  @Get(":serviceId/metrics")
+  getMetrics(@Param("serviceId") serviceId: string) {
+    return this.servicesService.getMetricTrends(serviceId);
+  }
+
+  @Get(":serviceId/approval-context")
+  getApprovalContext(@Param("serviceId") serviceId: string) {
+    return this.servicesService.getApprovalContext(serviceId);
+  }
+
   @Get(":serviceId/changes")
   getChanges(@Param("serviceId") serviceId: string) {
     return this.servicesService.getChanges(serviceId);

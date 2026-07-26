@@ -338,6 +338,18 @@ export interface MetricResult {
   timestamp: string;
 }
 
+export interface MetricSeriesPoint {
+  timestamp: string;
+  value: number;
+}
+
+export interface ServiceMetricTrend {
+  metricName: string;
+  label: string;
+  unit: string;
+  points: MetricSeriesPoint[];
+}
+
 export interface LogQuery {
   serviceId: string;
   pattern: string;

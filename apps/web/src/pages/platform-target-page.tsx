@@ -1,7 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, Stat } from "@enterprise-resilience/ui";
 import { Link, useParams } from "react-router-dom";
-import { getService, getServiceChanges, getServiceIncidents } from "@/api/incidents.js";
+import {
+  getService,
+  getServiceApprovalContext,
+  getServiceChanges,
+  getServiceDependencies,
+  getServiceIncidents,
+  getServiceMetrics
+} from "@/api/incidents.js";
 import { getPlatformStatus, rollbackPlatformTarget } from "@/api/platform.js";
 
 function formatRelativeTime(timestamp: string) {
@@ -26,7 +33,7 @@ function trendTone(status: "passed" | "failed" | "completed") {
 }
 
 function clampBar(value: number, max: number) {
-  return `${Math.max(12, Math.min(100, Math.round((value / max) * 100)))}%`;
+  return `${Math.max(8, Math.min(100, Math.round((value / max) * 100)))}%`;
 }
 
 function getReadinessSummary(input: {
@@ -34,6 +41,7 @@ function getReadinessSummary(input: {
   healthStatus?: "healthy" | "degraded" | "critical";
   latestSimulationStatus?: "passed" | "failed";
   hasRecentIncident: boolean;
+  requiresHumanApproval: boolean;
 }) {
   if (input.healthStatus === "critical") {
     return {
@@ -60,6 +68,13 @@ function getReadinessSummary(input: {
     return {
       label: "Safe to validate",
       detail: "Dry-run actions are available, but live execution remains disabled for this target."
+    };
+  }
+
+  if (input.requiresHumanApproval) {
+    return {
+      label: "Safe to act with approval",
+      detail: "The lane is healthy, but a human approval step is still required before live execution."
     };
   }
 
@@ -91,6 +106,21 @@ export function PlatformTargetPage() {
     queryFn: () => getServiceIncidents(targetService),
     enabled: Boolean(targetService)
   });
+  const dependenciesQuery = useQuery({
+    queryKey: ["service-dependencies", targetService],
+    queryFn: () => getServiceDependencies(targetService),
+    enabled: Boolean(targetService)
+  });
+  const metricsQuery = useQuery({
+    queryKey: ["service-metrics", targetService],
+    queryFn: () => getServiceMetrics(targetService),
+    enabled: Boolean(targetService)
+  });
+  const approvalContextQuery = useQuery({
+    queryKey: ["service-approval-context", targetService],
+    queryFn: () => getServiceApprovalContext(targetService),
+    enabled: Boolean(targetService)
+  });
   const rollbackMutation = useMutation({
     mutationFn: () => rollbackPlatformTarget(provider as "aws" | "gcp", targetService),
     onSuccess: async () => {
@@ -106,6 +136,9 @@ export function PlatformTargetPage() {
   const service = serviceQuery.data;
   const changes = changesQuery.data ?? [];
   const relatedIncidents = incidentsQuery.data ?? [];
+  const dependencies = dependenciesQuery.data ?? [];
+  const metrics = metricsQuery.data ?? [];
+  const approvalContext = approvalContextQuery.data;
 
   if (!target) {
     return <div className="page-grid">Loading target activity...</div>;
@@ -117,27 +150,9 @@ export function PlatformTargetPage() {
     executionMode: target.executionMode,
     healthStatus: service?.health.status,
     latestSimulationStatus: target.latestSimulation?.status,
-    hasRecentIncident: relatedIncidents.length > 0
+    hasRecentIncident: relatedIncidents.length > 0,
+    requiresHumanApproval: approvalContext?.requiresHumanApproval ?? false
   });
-  const healthBars = service
-    ? [
-        {
-          label: "Error rate",
-          value: `${service.health.errorRate}%`,
-          width: clampBar(service.health.errorRate, 10)
-        },
-        {
-          label: "Latency p95",
-          value: `${service.health.latencyP95Ms} ms`,
-          width: clampBar(service.health.latencyP95Ms, 3000)
-        },
-        {
-          label: "Saturation",
-          value: `${service.health.saturation}%`,
-          width: clampBar(service.health.saturation, 100)
-        }
-      ]
-    : [];
 
   return (
     <div className="page-grid">
@@ -187,6 +202,22 @@ export function PlatformTargetPage() {
             <p className="muted">
               Health: {service?.health.status ?? "loading"} · Related incidents: {relatedIncidents.length}
             </p>
+            <div className="provider-chip-row">
+              <span className="provider-chip provider-chip-muted">
+                policy: {approvalContext?.approvalPolicy ?? "loading"}
+              </span>
+              <span className="provider-chip provider-chip-muted">
+                state: {approvalContext?.state ?? "loading"}
+              </span>
+              {approvalContext?.targetEnvironment ? (
+                <span className="provider-chip provider-chip-muted">
+                  env: {approvalContext.targetEnvironment}
+                </span>
+              ) : null}
+            </div>
+            {approvalContext?.runbookId ? (
+              <p className="muted">Runbook: {approvalContext.runbookId}</p>
+            ) : null}
           </div>
           {relatedIncidents.length > 0 ? (
             <div className="activity-list">
@@ -205,24 +236,37 @@ export function PlatformTargetPage() {
           )}
         </Card>
 
-        <Card title="Health signal sparkline" subtitle="Current service health, compressed for fast scanning">
-          {healthBars.length > 0 ? (
+        <Card title="Metric trends" subtitle="Recent provider metrics for this target">
+          {metrics.length > 0 ? (
             <div className="sparkline-panel">
-              {healthBars.map((metric) => (
+              {metrics.map((metric) => (
                 <div key={metric.label} className="sparkline-row">
                   <div className="sparkline-meta">
                     <strong>{metric.label}</strong>
-                    <span className="muted">{metric.value}</span>
+                    <span className="muted">
+                      {metric.points[metric.points.length - 1]?.value} {metric.unit}
+                    </span>
                   </div>
-                  <div className="sparkline-track">
-                    <div className="sparkline-fill" style={{ width: metric.width }} />
+                  <div className="sparkline-points">
+                    {metric.points.map((point) => (
+                      <div key={point.timestamp} className="sparkline-bar-wrap">
+                        <div
+                          className="sparkline-fill"
+                          style={{
+                            width: "100%",
+                            height: clampBar(point.value, Math.max(...metric.points.map((entry) => entry.value), 1))
+                          }}
+                        />
+                        <span className="sparkline-caption">{formatRelativeTime(point.timestamp)}</span>
+                      </div>
+                    ))}
                   </div>
                 </div>
               ))}
-              <p className="muted">Snapshot captured from the provider-backed service health endpoint.</p>
+              <p className="muted">Series synthesized from the provider metric endpoint over the last 30 minutes.</p>
             </div>
           ) : (
-            <p>Loading health signals...</p>
+            <p>Loading metric trends...</p>
           )}
         </Card>
       </div>
@@ -267,6 +311,30 @@ export function PlatformTargetPage() {
       </div>
 
       <div className="two-column">
+        <Card title="Dependency health" subtitle="Check upstream or downstream services before acting">
+          {dependencies.length > 0 ? (
+            <div className="activity-list">
+              {dependencies.map((dependency) => (
+                <div key={dependency.serviceId} className="activity-item">
+                  <div className="provider-chip-row">
+                    <span className="provider-chip provider-chip-muted">{dependency.kind}</span>
+                    {dependency.cloudProvider ? (
+                      <span className="provider-chip provider-chip-muted">{dependency.cloudProvider.toUpperCase()}</span>
+                    ) : null}
+                  </div>
+                  <strong>{dependency.serviceId}</strong>
+                  <p>{dependency.description}</p>
+                  <p className="muted">
+                    {dependency.health ? `${dependency.health.status} · ${dependency.health.summary}` : "Health not available"}
+                  </p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p>No dependencies are registered for this target.</p>
+          )}
+        </Card>
+
         <Card title="Live recovery state" subtitle="Most recent successful live outcome">
           {target.lastSuccessfulLiveAction ? (
             <div className="simulation-box">
@@ -289,7 +357,9 @@ export function PlatformTargetPage() {
             </div>
           ) : null}
         </Card>
+      </div>
 
+      <div className="two-column">
         <Card title="Rollback history" subtitle="What happened when the lane needed to revert">
           {rollbackHistory.length > 0 ? (
             <div className="activity-list">
