@@ -138,7 +138,10 @@ Common API entry points:
 
 ### Option 3. Use through an MCP server
 
-This is included in the repository as a stdio MCP server.
+This is included in the repository as:
+
+- a stdio MCP server
+- a streamable HTTP MCP server for remote clients
 
 Typical usage:
 
@@ -200,6 +203,13 @@ After that, open:
 3. Configure your MCP host using [.vscode/mcp.json.example](/Users/rudan/Documents/hobby_projects/EnterpriseResilienceAgent/.vscode/mcp.json.example)
 4. Use the MCP tools:
    `get_platform_status`, `list_incidents`, `get_incident`, `approve_incident`, `reject_incident`, `escalate_incident`, `list_runbooks`, `simulate_runbook`, `list_audit_events`, `list_services`
+
+For remote MCP clients:
+
+1. Start the API with `npm run dev:api`
+2. Start the HTTP MCP server with `npm run start:mcp:http`
+3. Point the client at `http://YOUR_HOST:3101/mcp`
+4. Check health at `http://YOUR_HOST:3101/healthz`
 
 ## Project Structure
 

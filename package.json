@@ -11,6 +11,7 @@
     "dev:web": "npm run dev --workspace @enterprise-resilience/web",
     "dev:api": "npm run start:dev --workspace @enterprise-resilience/api",
     "start:mcp": "npm run start --workspace @enterprise-resilience/mcp",
+    "start:mcp:http": "npm run start:http --workspace @enterprise-resilience/mcp",
     "build": "npm run build --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test:api": "npm run test --workspace @enterprise-resilience/api"

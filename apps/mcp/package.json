@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "start": "tsx ../api/src/mcp/main.ts",
+    "start:http": "tsx ../api/src/mcp/http.ts",
     "build": "tsc --noEmit",
     "typecheck": "tsc --noEmit"
   },
