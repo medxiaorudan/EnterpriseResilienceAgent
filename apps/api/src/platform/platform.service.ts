@@ -315,6 +315,18 @@ export class PlatformService {
     };
   }
 
+  async getAlertHistory(provider: CloudProvider, targetService: string) {
+    const events = await this.store.listAuditEventsByProvider(provider);
+    return events.filter(
+      (event) =>
+        event.targetService === targetService &&
+        (event.summary === "Target alert state changed" ||
+          event.summary === "Target alert recovered" ||
+          event.summary === "Target alert acknowledged" ||
+          event.summary === "Target alert incident opened")
+    );
+  }
+
   async acknowledgeAlert(provider: CloudProvider, targetService: string, session: AuthSession) {
     const alert = await this.resolveTargetAlert(provider, targetService);
     if (!alert || alert.state === "normal") {

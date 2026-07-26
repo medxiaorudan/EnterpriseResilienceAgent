@@ -114,6 +114,7 @@ export class MetricsCollectorService implements OnModuleInit, OnModuleDestroy {
           : "Recent samples remain within policy thresholds.";
     const alertKey = `${provider}:${targetService}`;
     const previous = await this.store.getTargetAlertState(provider, targetService);
+    const startsNewCycle = (previous?.state ?? "normal") === "normal" && nextState !== "normal";
     const record: TargetAlertStateRecord = {
       alertKey,
       provider,
@@ -122,9 +123,9 @@ export class MetricsCollectorService implements OnModuleInit, OnModuleDestroy {
       summary,
       lastCollectedAt,
       breachedMetrics: nextState === "breached" ? breachedMetrics : warningMetrics,
-      acknowledgedAt: previous?.state === nextState ? previous.acknowledgedAt : undefined,
-      acknowledgedBy: previous?.state === nextState ? previous.acknowledgedBy : undefined,
-      incidentId: previous?.incidentId,
+      acknowledgedAt: previous?.state === nextState && !startsNewCycle ? previous.acknowledgedAt : undefined,
+      acknowledgedBy: previous?.state === nextState && !startsNewCycle ? previous.acknowledgedBy : undefined,
+      incidentId: previous?.state === nextState && !startsNewCycle ? previous.incidentId : undefined,
       updatedAt: lastCollectedAt
     };
 
@@ -139,6 +140,18 @@ export class MetricsCollectorService implements OnModuleInit, OnModuleDestroy {
         category: "policy",
         summary: "Target alert state changed",
         detail: `${targetService} moved from ${previous?.state ?? "unknown"} to ${nextState}: ${summary}`
+      });
+    }
+
+    if ((previous?.state === "warning" || previous?.state === "breached") && nextState === "normal") {
+      await this.store.recordAudit({
+        actor: "metric-collector",
+        provider,
+        targetService,
+        incidentId: previous?.incidentId,
+        category: "verification",
+        summary: "Target alert recovered",
+        detail: `${targetService} returned to normal after ${previous.state}. Recent samples are back within threshold.`
       });
     }
   }

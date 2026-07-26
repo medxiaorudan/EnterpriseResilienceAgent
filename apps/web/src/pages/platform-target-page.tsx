@@ -12,6 +12,7 @@ import {
 import {
   acknowledgePlatformAlert,
   getPlatformStatus,
+  getPlatformTargetAlertHistory,
   openIncidentForPlatformAlert,
   rollbackPlatformTarget
 } from "@/api/platform.js";
@@ -135,6 +136,11 @@ export function PlatformTargetPage() {
     queryFn: () => getServiceApprovalContext(targetService),
     enabled: Boolean(targetService)
   });
+  const alertHistoryQuery = useQuery({
+    queryKey: ["platform-alert-history", provider, targetService],
+    queryFn: () => getPlatformTargetAlertHistory(provider as "aws" | "gcp", targetService),
+    enabled: Boolean(provider && targetService)
+  });
   const rollbackMutation = useMutation({
     mutationFn: () => rollbackPlatformTarget(provider as "aws" | "gcp", targetService),
     onSuccess: async () => {
@@ -169,6 +175,7 @@ export function PlatformTargetPage() {
   const dependencies = dependenciesQuery.data ?? [];
   const metrics = metricsQuery.data ?? [];
   const approvalContext = approvalContextQuery.data;
+  const alertHistory = alertHistoryQuery.data ?? [];
 
   if (!target) {
     return <div className="page-grid">Loading target activity...</div>;
@@ -399,6 +406,29 @@ export function PlatformTargetPage() {
       </div>
 
       <div className="two-column">
+        <Card title="Alert history" subtitle="Who acknowledged, escalated, or recovered this target alert">
+          {alertHistory.length > 0 ? (
+            <div className="activity-list">
+              {alertHistory.map((event) => (
+                <div key={event.auditId} className="activity-item">
+                  <strong>{event.summary}</strong>
+                  <p>{event.detail}</p>
+                  <p className="muted">
+                    {event.actor} · {new Date(event.timestamp).toLocaleString()}
+                  </p>
+                  {event.incidentId ? (
+                    <Link to={`/incidents/${event.incidentId}`} className="target-link">
+                      Open incident {event.incidentId}
+                    </Link>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="muted">No alert lifecycle events are recorded for this target yet.</p>
+          )}
+        </Card>
+
         <Card title="Dependency health" subtitle="Check upstream or downstream services before acting">
           {dependencies.length > 0 ? (
             <div className="activity-list">

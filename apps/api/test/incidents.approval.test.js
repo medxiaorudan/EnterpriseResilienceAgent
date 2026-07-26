@@ -8,6 +8,7 @@ import { seedIncidents, seedRunbooks, seedServices } from "@enterprise-resilienc
 import { AppModule } from "../dist/app.module.js";
 import { RedisService } from "../dist/common/redis.service.js";
 import { StoreService } from "../dist/common/store.service.js";
+import { MetricsCollectorService } from "../dist/services/metrics-collector.service.js";
 
 class FakeStoreService {
   constructor(seed = seedIncidents) {
@@ -266,6 +267,7 @@ describe("incident approval API", () => {
   let app;
   let fakeStore;
   let fakeRedis;
+  let metricsCollector;
 const incidentId = "INC-2026-0042";
 const managerHeaders = {
   "x-era-user": "manager.demo",
@@ -289,6 +291,7 @@ const managerHeaders = {
     app.setGlobalPrefix("api");
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
+    metricsCollector = app.get(MetricsCollectorService);
   });
 
   afterEach(async () => {
@@ -670,6 +673,50 @@ const managerHeaders = {
 
     assert.equal(gcpTarget.alertIncidentId, incidentBody.incidentId);
     assert.equal(gcpTarget.alertAcknowledgedBy, "Incident Manager");
+
+    const historyResponse = await app.inject({
+      method: "GET",
+      url: "/api/platform/targets/gcp/payment-routing/alert-history",
+      headers: managerHeaders
+    });
+    const historyBody = historyResponse.json();
+
+    assert.equal(historyResponse.statusCode, 200);
+    assert.equal(historyBody.some((event) => event.summary === "Target alert acknowledged"), true);
+    assert.equal(historyBody.some((event) => event.summary === "Target alert incident opened"), true);
+  });
+
+  test("records recovery audit when collector closes an active alert cycle", async () => {
+    await fakeStore.saveTargetAlertState({
+      alertKey: "gcp:payment-routing",
+      provider: "gcp",
+      targetService: "payment-routing",
+      state: "breached",
+      summary: "Request error rate stayed breached across the last 3 samples.",
+      lastCollectedAt: "2026-07-26T22:10:00.000Z",
+      breachedMetrics: ["Request error rate"],
+      acknowledgedAt: "2026-07-26T22:12:00.000Z",
+      acknowledgedBy: "Incident Manager",
+      incidentId: "INC-2026-0042",
+      updatedAt: "2026-07-26T22:12:00.000Z"
+    });
+    for (const minute of [0, 5, 10]) {
+      await fakeStore.appendMetricSample({
+        serviceId: "payment-routing",
+        metricName: "request_error_rate",
+        unit: "%",
+        value: 2.2,
+        timestamp: `2026-07-26T21:${String(minute).padStart(2, "0")}:00.000Z`
+      });
+    }
+
+    await metricsCollector.collectAllTargets();
+
+    const recoveryEvent = fakeStore.auditEvents.find((event) => event.summary === "Target alert recovered");
+    const latestAlert = await fakeStore.getTargetAlertState("gcp", "payment-routing");
+
+    assert.equal(latestAlert.state, "normal");
+    assert.match(recoveryEvent.detail, /returned to normal/i);
   });
 
   test("exposes service approval context and metric trends for a target service", async () => {

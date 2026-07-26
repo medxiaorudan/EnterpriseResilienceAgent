@@ -12,6 +12,15 @@ export class PlatformController {
     return this.platformService.getStatus();
   }
 
+  @Get("targets/:provider/:targetService/alert-history")
+  @Roles("viewer", "business-approver", "incident-manager", "engineer", "auditor", "admin")
+  getAlertHistory(
+    @Param("provider") provider: CloudProvider,
+    @Param("targetService") targetService: string
+  ) {
+    return this.platformService.getAlertHistory(provider, targetService);
+  }
+
   @Post("targets/:provider/:targetService/rollback")
   @Roles("engineer", "incident-manager")
   rollbackTarget(
