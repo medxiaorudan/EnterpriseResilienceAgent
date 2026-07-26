@@ -18,7 +18,9 @@ class FakePostgresService {
       approvals: new Map(),
       audit_events: new Map(),
       metric_history: new Map(),
-      target_alert_states: new Map()
+      target_alert_states: new Map(),
+      alert_channel_states: new Map(),
+      alert_dead_letters: new Map()
     };
   }
 
@@ -143,6 +145,31 @@ class FakePostgresService {
       return this.result([]);
     }
 
+    if (sql.startsWith("insert into alert_channel_states")) {
+      const [channelName, enabled, updatedAt, payload] = values;
+      this.tables.alert_channel_states.set(channelName, {
+        channel_name: channelName,
+        enabled,
+        updated_at: updatedAt,
+        payload: JSON.parse(payload)
+      });
+      return this.result([]);
+    }
+
+    if (sql.startsWith("insert into alert_dead_letters")) {
+      const [deadLetterId, channelName, provider, targetService, createdAt, payload] = values;
+      this.tables.alert_dead_letters.set(deadLetterId, {
+        dead_letter_id: deadLetterId,
+        channel_name: channelName,
+        provider,
+        target_service: targetService,
+        created_at: createdAt,
+        resolved_at: JSON.parse(payload).resolvedAt ?? null,
+        payload: JSON.parse(payload)
+      });
+      return this.result([]);
+    }
+
     if (sql.startsWith("delete from metric_history")) {
       const [serviceId, metricName] = values;
       const matches = [...this.tables.metric_history.values()]
@@ -173,6 +200,47 @@ class FakePostgresService {
         (entry) => entry.provider === values[0] && entry.target_service === values[1]
       );
       return this.result(row ? [{ payload: row.payload }] : []);
+    }
+
+    if (sql === "select payload from alert_channel_states order by channel_name asc") {
+      return this.result(
+        [...this.tables.alert_channel_states.values()]
+          .sort((left, right) => left.channel_name.localeCompare(right.channel_name))
+          .map((row) => ({ payload: row.payload }))
+      );
+    }
+
+    if (sql === "select payload from alert_channel_states where channel_name = $1") {
+      const row = this.tables.alert_channel_states.get(values[0]);
+      return this.result(row ? [{ payload: row.payload }] : []);
+    }
+
+    if (sql === "select payload from alert_dead_letters order by created_at desc") {
+      return this.result(
+        [...this.tables.alert_dead_letters.values()]
+          .sort((left, right) => String(right.created_at).localeCompare(String(left.created_at)))
+          .map((row) => ({ payload: row.payload }))
+      );
+    }
+
+    if (
+      sql ===
+      "select channel_name, count(*)::text as count from alert_dead_letters where resolved_at is null group by channel_name"
+    ) {
+      const counts = new Map();
+      for (const row of this.tables.alert_dead_letters.values()) {
+        if (row.resolved_at) {
+          continue;
+        }
+        counts.set(row.channel_name, (counts.get(row.channel_name) ?? 0) + 1);
+      }
+
+      return this.result(
+        [...counts.entries()].map(([channel_name, count]) => ({
+          channel_name,
+          count: String(count)
+        }))
+      );
     }
 
     if (sql === "select payload from incidents order by updated_at desc") {
@@ -432,5 +500,37 @@ describe("store persistence behavior", () => {
     assert.equal(alert?.state, "breached");
     assert.equal(alert?.acknowledgedBy, "Morgan Manager");
     assert.equal(alert?.incidentId, "INC-2026-0042");
+  });
+
+  test("persists alert channel state and dead-letter counters", async () => {
+    const store = new StoreService(new FakePostgresService());
+    await store.onModuleInit();
+
+    await store.saveAlertChannelState({
+      channelName: "primary-webhook",
+      enabled: false,
+      mutedUntil: "2026-07-26T23:30:00.000Z",
+      updatedAt: "2026-07-26T23:00:00.000Z"
+    });
+    await store.createAlertDeadLetter({
+      deadLetterId: "dead-letter-1",
+      channelName: "primary-webhook",
+      provider: "aws",
+      targetService: "checkout-api",
+      eventType: "auto-escalated",
+      payloadSummary: "Checkout sustained breach",
+      error: "Webhook returned 500",
+      createdAt: "2026-07-26T23:05:00.000Z"
+    });
+
+    const channelState = await store.getAlertChannelState("primary-webhook");
+    const deadLetters = await store.listAlertDeadLetters();
+    const pendingCounts = await store.countPendingAlertDeadLettersByChannel();
+
+    assert.equal(channelState?.enabled, false);
+    assert.equal(channelState?.mutedUntil, "2026-07-26T23:30:00.000Z");
+    assert.equal(deadLetters.length, 1);
+    assert.equal(deadLetters[0].channelName, "primary-webhook");
+    assert.equal(pendingCounts.get("primary-webhook"), 1);
   });
 });

@@ -33,11 +33,12 @@ export class PlatformService {
     const awsLiveExecution = this.awsConfig.isLiveExecutionEnabled();
     const gcpLiveExecution = this.gcpConfig.isLiveExecutionEnabled();
     const deploymentMode = process.env.DEPLOYMENT_MODE ?? "cloud-ready";
-    const alertChannels = this.alertRouting.getChannelConfigs();
+    const alertChannels = await this.alertRouting.listRuntimeChannelConfigs();
     const alertWebhookConfigured = alertChannels.some((channel) => channel.configured);
     const alertEscalationBreachStreak = Number(process.env.ALERT_ESCALATION_BREACH_STREAK ?? "2");
     const metricPollIntervalMs = Number(process.env.METRIC_POLL_INTERVAL_MS ?? "300000");
     const auditEvents = await this.store.listAuditEvents();
+    const pendingDeadLettersByChannel = await this.store.countPendingAlertDeadLettersByChannel();
     const latestSimulationByTarget = new Map<string, (typeof auditEvents)[number]>();
     for (const event of auditEvents) {
       if (
@@ -311,6 +312,8 @@ export class PlatformService {
             name: channel.name,
             deliveryMode: channel.deliveryMode,
             configured: channel.configured,
+            enabled: channel.enabled,
+            mutedUntil: channel.mutedUntil,
             lastDeliveryStatus: !lastEvent
               ? ("unknown" as const)
               : lastEvent.summary === "Target alert notification sent"
@@ -319,7 +322,8 @@ export class PlatformService {
                   ? ("failed" as const)
                   : ("skipped" as const),
             lastDeliveryAt: lastEvent?.timestamp,
-            lastDeliverySummary: lastEvent?.detail
+            lastDeliverySummary: lastEvent?.detail,
+            pendingDeadLetters: pendingDeadLettersByChannel.get(channel.name) ?? 0
           };
         }),
         autoEscalationTargets: [...awsTargets, ...gcpTargets]
@@ -377,6 +381,26 @@ export class PlatformService {
           event.summary === "Target alert notification skipped" ||
           event.summary === "Target alert notification failed")
     );
+  }
+
+  async enableAlertChannel(channelName: string) {
+    await this.alertRouting.setChannelEnabled(channelName, true);
+    return this.getStatus();
+  }
+
+  async disableAlertChannel(channelName: string) {
+    await this.alertRouting.setChannelEnabled(channelName, false);
+    return this.getStatus();
+  }
+
+  async muteAlertChannel(channelName: string, durationMinutes = 60) {
+    await this.alertRouting.muteChannel(channelName, durationMinutes);
+    return this.getStatus();
+  }
+
+  async unmuteAlertChannel(channelName: string) {
+    await this.alertRouting.unmuteChannel(channelName);
+    return this.getStatus();
   }
 
   async acknowledgeAlert(provider: CloudProvider, targetService: string, session: AuthSession) {

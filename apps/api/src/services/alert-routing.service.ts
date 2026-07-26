@@ -1,4 +1,5 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { randomUUID } from "node:crypto";
 import type { CloudProvider } from "@enterprise-resilience/contracts";
 import { StoreService } from "../common/store.service.js";
 
@@ -41,8 +42,71 @@ export class AlertRoutingService {
     }));
   }
 
+  async listRuntimeChannelConfigs() {
+    const configs = this.getChannelConfigs();
+    const storedStates = await this.store.listAlertChannelStates();
+    const stateByChannel = new Map(storedStates.map((record) => [record.channelName, record]));
+
+    return configs.map((channel) => {
+      const stored = stateByChannel.get(channel.name);
+      const mutedUntil = stored?.mutedUntil;
+
+      return {
+        ...channel,
+        enabled: stored?.enabled ?? true,
+        mutedUntil
+      };
+    });
+  }
+
   getRetryCount() {
     return Number(process.env.ALERT_WEBHOOK_RETRY_COUNT ?? "1");
+  }
+
+  async setChannelEnabled(channelName: string, enabled: boolean) {
+    const channel = this.getChannelConfigs().find((item) => item.name === channelName);
+    if (!channel) {
+      throw new NotFoundException(`Alert channel ${channelName} is not configured.`);
+    }
+
+    const existing = await this.store.getAlertChannelState(channelName);
+    const record = {
+      channelName,
+      enabled,
+      mutedUntil: existing?.mutedUntil,
+      updatedAt: new Date().toISOString()
+    };
+    return this.store.saveAlertChannelState(record);
+  }
+
+  async muteChannel(channelName: string, durationMinutes = 60) {
+    const channel = this.getChannelConfigs().find((item) => item.name === channelName);
+    if (!channel) {
+      throw new NotFoundException(`Alert channel ${channelName} is not configured.`);
+    }
+
+    const existing = await this.store.getAlertChannelState(channelName);
+    const mutedUntil = new Date(Date.now() + durationMinutes * 60000).toISOString();
+    return this.store.saveAlertChannelState({
+      channelName,
+      enabled: existing?.enabled ?? true,
+      mutedUntil,
+      updatedAt: new Date().toISOString()
+    });
+  }
+
+  async unmuteChannel(channelName: string) {
+    const channel = this.getChannelConfigs().find((item) => item.name === channelName);
+    if (!channel) {
+      throw new NotFoundException(`Alert channel ${channelName} is not configured.`);
+    }
+
+    const existing = await this.store.getAlertChannelState(channelName);
+    return this.store.saveAlertChannelState({
+      channelName,
+      enabled: existing?.enabled ?? true,
+      updatedAt: new Date().toISOString()
+    });
   }
 
   async route(input: {
@@ -58,7 +122,7 @@ export class AlertRoutingService {
       | "incident-opened"
       | "auto-escalated";
   }) {
-    const channels = this.getChannelConfigs();
+    const channels = await this.listRuntimeChannelConfigs();
     const retryCount = this.getRetryCount();
     const timestamp = new Date().toISOString();
     const payload = {
@@ -82,6 +146,32 @@ export class AlertRoutingService {
 
     let delivered = false;
     for (const channel of channels) {
+      if (channel.enabled === false) {
+        await this.store.recordAudit({
+          actor: "alert-router",
+          provider: input.provider,
+          targetService: input.targetService,
+          incidentId: input.incidentId,
+          category: "policy",
+          summary: "Target alert notification skipped",
+          detail: `channel=${channel.name}; eventType=${input.eventType}; Channel is disabled, so notification was skipped for ${input.targetService}.`
+        });
+        continue;
+      }
+
+      if (channel.mutedUntil && new Date(channel.mutedUntil).getTime() > Date.now()) {
+        await this.store.recordAudit({
+          actor: "alert-router",
+          provider: input.provider,
+          targetService: input.targetService,
+          incidentId: input.incidentId,
+          category: "policy",
+          summary: "Target alert notification skipped",
+          detail: `channel=${channel.name}; eventType=${input.eventType}; Channel is muted until ${channel.mutedUntil}, so notification was skipped for ${input.targetService}.`
+        });
+        continue;
+      }
+
       if (!channel.url) {
         continue;
       }
@@ -128,6 +218,16 @@ export class AlertRoutingService {
               category: "policy",
               summary: "Target alert notification failed",
               detail: `channel=${channel.name}; eventType=${input.eventType}; attempts=${retryCount + 1}; notification failed for ${input.targetService}: ${lastError}.`
+            });
+            await this.store.createAlertDeadLetter({
+              deadLetterId: randomUUID(),
+              channelName: channel.name,
+              provider: input.provider,
+              targetService: input.targetService,
+              eventType: input.eventType,
+              payloadSummary: input.summary,
+              error: lastError,
+              createdAt: new Date().toISOString()
             });
           }
         }

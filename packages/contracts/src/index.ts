@@ -321,6 +321,25 @@ export interface TargetAlertStateRecord {
   updatedAt: string;
 }
 
+export interface AlertChannelStateRecord {
+  channelName: string;
+  enabled: boolean;
+  mutedUntil?: string;
+  updatedAt: string;
+}
+
+export interface AlertDeadLetterRecord {
+  deadLetterId: string;
+  channelName: string;
+  provider: CloudProvider;
+  targetService: string;
+  eventType: string;
+  payloadSummary: string;
+  error: string;
+  createdAt: string;
+  resolvedAt?: string;
+}
+
 export interface PlatformStatusSummary {
   productName: string;
   deploymentMode: "local" | "container" | "cloud-ready";
@@ -339,9 +358,12 @@ export interface PlatformStatusSummary {
       name: string;
       deliveryMode: "webhook" | "audit-only";
       configured: boolean;
+      enabled: boolean;
+      mutedUntil?: string;
       lastDeliveryStatus: "sent" | "failed" | "skipped" | "unknown";
       lastDeliveryAt?: string;
       lastDeliverySummary?: string;
+      pendingDeadLetters: number;
     }>;
     autoEscalationTargets: string[];
     summary: string;

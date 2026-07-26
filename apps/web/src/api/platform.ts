@@ -37,3 +37,31 @@ export function openIncidentForPlatformAlert(provider: "aws" | "gcp", targetServ
     body: JSON.stringify({})
   });
 }
+
+export function enableAlertRoutingChannel(channelName: string) {
+  return apiRequest<PlatformStatusSummary>(`/platform/alert-routing/channels/${channelName}/enable`, {
+    method: "POST",
+    body: JSON.stringify({})
+  });
+}
+
+export function disableAlertRoutingChannel(channelName: string) {
+  return apiRequest<PlatformStatusSummary>(`/platform/alert-routing/channels/${channelName}/disable`, {
+    method: "POST",
+    body: JSON.stringify({})
+  });
+}
+
+export function muteAlertRoutingChannel(channelName: string, durationMinutes = 60) {
+  return apiRequest<PlatformStatusSummary>(`/platform/alert-routing/channels/${channelName}/mute`, {
+    method: "POST",
+    body: JSON.stringify({ durationMinutes })
+  });
+}
+
+export function unmuteAlertRoutingChannel(channelName: string) {
+  return apiRequest<PlatformStatusSummary>(`/platform/alert-routing/channels/${channelName}/unmute`, {
+    method: "POST",
+    body: JSON.stringify({})
+  });
+}

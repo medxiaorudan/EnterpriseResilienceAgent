@@ -1,7 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Badge, Card, Stat } from "@enterprise-resilience/ui";
+import { getAuthSession } from "@/api/auth.js";
 import { simulateRunbook } from "@/api/incidents.js";
-import { getPlatformStatus } from "@/api/platform.js";
+import {
+  disableAlertRoutingChannel,
+  enableAlertRoutingChannel,
+  getPlatformStatus,
+  muteAlertRoutingChannel,
+  unmuteAlertRoutingChannel
+} from "@/api/platform.js";
 import { Link } from "react-router-dom";
 
 function componentTone(status: "ready" | "configuration-needed" | "disabled") {
@@ -45,6 +52,10 @@ function formatRelativeTime(timestamp: string) {
 
 export function PlatformPage() {
   const queryClient = useQueryClient();
+  const sessionQuery = useQuery({
+    queryKey: ["auth-session"],
+    queryFn: getAuthSession
+  });
   const platformQuery = useQuery({
     queryKey: ["platform-status"],
     queryFn: getPlatformStatus
@@ -52,6 +63,27 @@ export function PlatformPage() {
   const simulateMutation = useMutation({
     mutationFn: ({ runbookId, targetService }: { runbookId: string; targetService: string }) =>
       simulateRunbook(runbookId, targetService),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["platform-status"] });
+      await queryClient.invalidateQueries({ queryKey: ["audit-events"] });
+    }
+  });
+  const channelMutation = useMutation({
+    mutationFn: async (input: {
+      action: "enable" | "disable" | "mute" | "unmute";
+      channelName: string;
+    }) => {
+      if (input.action === "enable") {
+        return enableAlertRoutingChannel(input.channelName);
+      }
+      if (input.action === "disable") {
+        return disableAlertRoutingChannel(input.channelName);
+      }
+      if (input.action === "mute") {
+        return muteAlertRoutingChannel(input.channelName, 60);
+      }
+      return unmuteAlertRoutingChannel(input.channelName);
+    },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["platform-status"] });
       await queryClient.invalidateQueries({ queryKey: ["audit-events"] });
@@ -66,6 +98,7 @@ export function PlatformPage() {
   const liveProviderCount = cloudComponents.filter((component) => component.status === "ready").length;
   const alertedTargets = providerTargets.filter((target) => target.metricAlertState && target.metricAlertState !== "normal");
   const alertRouting = platform?.alertRouting;
+  const canAdminChannels = sessionQuery.data?.role === "admin";
 
   return (
     <div className="page-grid">
@@ -185,6 +218,10 @@ export function PlatformPage() {
                   <div className="provider-chip-row">
                     <span className="provider-chip provider-chip-muted">{channel.name}</span>
                     <span className="provider-chip provider-chip-muted">{channel.deliveryMode}</span>
+                    <Badge tone={channel.enabled ? "good" : "warning"}>
+                      {channel.enabled ? "enabled" : "disabled"}
+                    </Badge>
+                    {channel.mutedUntil ? <Badge tone="warning">muted</Badge> : null}
                     <Badge
                       tone={
                         channel.lastDeliveryStatus === "sent"
@@ -207,6 +244,40 @@ export function PlatformPage() {
                       ? `Last activity ${formatRelativeTime(channel.lastDeliveryAt)}`
                       : "No recent delivery activity"}
                   </p>
+                  <p className="muted">
+                    {channel.mutedUntil
+                      ? `Muted until ${new Date(channel.mutedUntil).toLocaleString()}`
+                      : "Channel is available for delivery"}
+                    {` · ${channel.pendingDeadLetters} pending dead-letter${channel.pendingDeadLetters === 1 ? "" : "s"}`}
+                  </p>
+                  {canAdminChannels ? (
+                    <div className="provider-chip-row">
+                      <button
+                        className="secondary-button"
+                        onClick={() =>
+                          channelMutation.mutate({
+                            action: channel.enabled ? "disable" : "enable",
+                            channelName: channel.name
+                          })
+                        }
+                        disabled={channelMutation.isPending}
+                      >
+                        {channel.enabled ? "Disable channel" : "Enable channel"}
+                      </button>
+                      <button
+                        className="secondary-button"
+                        onClick={() =>
+                          channelMutation.mutate({
+                            action: channel.mutedUntil ? "unmute" : "mute",
+                            channelName: channel.name
+                          })
+                        }
+                        disabled={channelMutation.isPending}
+                      >
+                        {channel.mutedUntil ? "Unmute" : "Mute 60 min"}
+                      </button>
+                    </div>
+                  ) : null}
                 </div>
               ))}
               {alertRouting.autoEscalationTargets.length ? (

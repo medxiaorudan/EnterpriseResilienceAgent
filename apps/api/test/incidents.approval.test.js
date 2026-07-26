@@ -19,6 +19,8 @@ class FakeStoreService {
     this.services = new Map();
     this.metricHistory = new Map();
     this.targetAlertStates = new Map();
+    this.alertChannelStates = new Map();
+    this.alertDeadLetters = [];
     for (const incident of structuredClone(seed)) {
       this.incidents.set(incident.incidentId, incident);
     }
@@ -66,6 +68,40 @@ class FakeStoreService {
   async saveTargetAlertState(record) {
     this.targetAlertStates.set(record.alertKey, record);
     return record;
+  }
+
+  async listAlertChannelStates() {
+    return [...this.alertChannelStates.values()].sort((left, right) => left.channelName.localeCompare(right.channelName));
+  }
+
+  async getAlertChannelState(channelName) {
+    return this.alertChannelStates.get(channelName);
+  }
+
+  async saveAlertChannelState(record) {
+    this.alertChannelStates.set(record.channelName, record);
+    return record;
+  }
+
+  async createAlertDeadLetter(record) {
+    this.alertDeadLetters.unshift(record);
+    return record;
+  }
+
+  async listAlertDeadLetters() {
+    return this.alertDeadLetters;
+  }
+
+  async countPendingAlertDeadLettersByChannel() {
+    const counts = new Map();
+    for (const record of this.alertDeadLetters) {
+      if (record.resolvedAt) {
+        continue;
+      }
+
+      counts.set(record.channelName, (counts.get(record.channelName) ?? 0) + 1);
+    }
+    return counts;
   }
 
   async listIncidents() {
@@ -776,6 +812,113 @@ const managerHeaders = {
       assert.equal(body.alertRouting.channels.length, 2);
       assert.equal(body.alertRouting.channels[0].lastDeliveryStatus, "sent");
       assert.match(body.alertRouting.channels[0].lastDeliverySummary, /channel=primary-webhook/i);
+    } finally {
+      process.env.ALERT_WEBHOOK_URL = previousSingle;
+      process.env.ALERT_WEBHOOK_URLS = previousMulti;
+      process.env.ALERT_WEBHOOK_RETRY_COUNT = previousRetry;
+      global.fetch = originalFetch;
+    }
+  });
+
+  test("allows admins to disable and mute alert channels at runtime", async () => {
+    const previousSingle = process.env.ALERT_WEBHOOK_URL;
+    const previousMulti = process.env.ALERT_WEBHOOK_URLS;
+    const originalFetch = global.fetch;
+
+    process.env.ALERT_WEBHOOK_URL = "https://alerts-primary.example.test";
+    process.env.ALERT_WEBHOOK_URLS = "https://alerts-secondary.example.test";
+    global.fetch = async () =>
+      ({
+        ok: true,
+        status: 200
+      });
+
+    try {
+      const disableResponse = await app.inject({
+        method: "POST",
+        url: "/api/platform/alert-routing/channels/primary-webhook/disable",
+        headers: {
+          "x-era-user": "admin.demo",
+          "x-era-role": "admin"
+        }
+      });
+      const disableBody = disableResponse.json();
+
+      assert.equal(disableResponse.statusCode, 201);
+      assert.equal(disableBody.alertRouting.channels[0].enabled, false);
+
+      await alertRoutingService.route({
+        provider: "gcp",
+        targetService: "payment-routing",
+        state: "warning",
+        summary: "Disabled channel check",
+        eventType: "state-changed"
+      });
+
+      const skippedEvent = fakeStore.auditEvents.find(
+        (event) =>
+          event.summary === "Target alert notification skipped" &&
+          event.detail.includes("channel=primary-webhook;") &&
+          event.detail.includes("disabled")
+      );
+      assert.ok(skippedEvent);
+
+      const muteResponse = await app.inject({
+        method: "POST",
+        url: "/api/platform/alert-routing/channels/webhook-2/mute",
+        headers: {
+          "x-era-user": "admin.demo",
+          "x-era-role": "admin"
+        },
+        payload: {
+          durationMinutes: 30
+        }
+      });
+      const muteBody = muteResponse.json();
+      const secondaryChannel = muteBody.alertRouting.channels.find((channel) => channel.name === "webhook-2");
+
+      assert.equal(muteResponse.statusCode, 201);
+      assert.ok(secondaryChannel.mutedUntil);
+    } finally {
+      process.env.ALERT_WEBHOOK_URL = previousSingle;
+      process.env.ALERT_WEBHOOK_URLS = previousMulti;
+      global.fetch = originalFetch;
+    }
+  });
+
+  test("records dead letters when delivery retries are exhausted", async () => {
+    const previousSingle = process.env.ALERT_WEBHOOK_URL;
+    const previousMulti = process.env.ALERT_WEBHOOK_URLS;
+    const previousRetry = process.env.ALERT_WEBHOOK_RETRY_COUNT;
+    const originalFetch = global.fetch;
+
+    process.env.ALERT_WEBHOOK_URL = "https://alerts-primary.example.test";
+    delete process.env.ALERT_WEBHOOK_URLS;
+    process.env.ALERT_WEBHOOK_RETRY_COUNT = "1";
+    global.fetch = async () => {
+      throw new Error("network down");
+    };
+
+    try {
+      await alertRoutingService.route({
+        provider: "aws",
+        targetService: "checkout-api",
+        state: "breached",
+        summary: "Dead-letter verification",
+        eventType: "auto-escalated"
+      });
+
+      const statusResponse = await app.inject({
+        method: "GET",
+        url: "/api/platform/status",
+        headers: managerHeaders
+      });
+      const statusBody = statusResponse.json();
+
+      assert.equal(statusResponse.statusCode, 200);
+      assert.equal(fakeStore.alertDeadLetters.length, 1);
+      assert.equal(fakeStore.alertDeadLetters[0].channelName, "primary-webhook");
+      assert.equal(statusBody.alertRouting.channels[0].pendingDeadLetters, 1);
     } finally {
       process.env.ALERT_WEBHOOK_URL = previousSingle;
       process.env.ALERT_WEBHOOK_URLS = previousMulti;

@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Post } from "@nestjs/common";
+import { Body, Controller, Get, Param, Post } from "@nestjs/common";
 import { CurrentSession, Roles } from "../auth/auth.decorators.js";
 import type { AuthSession, CloudProvider } from "@enterprise-resilience/contracts";
 import { PlatformService } from "./platform.service.js";
@@ -49,5 +49,32 @@ export class PlatformController {
     @CurrentSession() session: AuthSession
   ) {
     return this.platformService.openIncidentFromAlert(provider, targetService, session);
+  }
+
+  @Post("alert-routing/channels/:channelName/enable")
+  @Roles("admin")
+  enableAlertChannel(@Param("channelName") channelName: string) {
+    return this.platformService.enableAlertChannel(channelName);
+  }
+
+  @Post("alert-routing/channels/:channelName/disable")
+  @Roles("admin")
+  disableAlertChannel(@Param("channelName") channelName: string) {
+    return this.platformService.disableAlertChannel(channelName);
+  }
+
+  @Post("alert-routing/channels/:channelName/mute")
+  @Roles("admin")
+  muteAlertChannel(
+    @Param("channelName") channelName: string,
+    @Body() body: { durationMinutes?: number }
+  ) {
+    return this.platformService.muteAlertChannel(channelName, body.durationMinutes);
+  }
+
+  @Post("alert-routing/channels/:channelName/unmute")
+  @Roles("admin")
+  unmuteAlertChannel(@Param("channelName") channelName: string) {
+    return this.platformService.unmuteAlertChannel(channelName);
   }
 }

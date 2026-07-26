@@ -1,5 +1,7 @@
 import { Injectable, OnModuleInit } from "@nestjs/common";
 import {
+  type AlertChannelStateRecord,
+  type AlertDeadLetterRecord,
   type ApprovalRecord,
   type AuditEvent,
   type CloudService,
@@ -155,6 +157,91 @@ export class StoreService implements OnModuleInit {
       [record.alertKey, record.provider, record.targetService, record.state, record.updatedAt, JSON.stringify(record)]
     );
     return record;
+  }
+
+  async listAlertChannelStates() {
+    await this.ensureInitialized();
+    const result = await this.postgres.query<JsonRow<AlertChannelStateRecord>>(
+      "select payload from alert_channel_states order by channel_name asc"
+    );
+    return result.rows.map((row) => row.payload);
+  }
+
+  async getAlertChannelState(channelName: string) {
+    await this.ensureInitialized();
+    const result = await this.postgres.query<JsonRow<AlertChannelStateRecord>>(
+      "select payload from alert_channel_states where channel_name = $1",
+      [channelName]
+    );
+    return result.rows[0]?.payload;
+  }
+
+  async saveAlertChannelState(record: AlertChannelStateRecord) {
+    await this.ensureInitialized();
+    await this.postgres.query(
+      `
+        insert into alert_channel_states (
+          channel_name,
+          enabled,
+          updated_at,
+          payload
+        )
+        values ($1, $2, $3, $4::jsonb)
+        on conflict (channel_name) do update set
+          enabled = excluded.enabled,
+          updated_at = excluded.updated_at,
+          payload = excluded.payload
+      `,
+      [record.channelName, record.enabled, record.updatedAt, JSON.stringify(record)]
+    );
+    return record;
+  }
+
+  async createAlertDeadLetter(record: AlertDeadLetterRecord) {
+    await this.ensureInitialized();
+    await this.postgres.query(
+      `
+        insert into alert_dead_letters (
+          dead_letter_id,
+          channel_name,
+          provider,
+          target_service,
+          created_at,
+          payload
+        )
+        values ($1, $2, $3, $4, $5, $6::jsonb)
+      `,
+      [
+        record.deadLetterId,
+        record.channelName,
+        record.provider,
+        record.targetService,
+        record.createdAt,
+        JSON.stringify(record)
+      ]
+    );
+    return record;
+  }
+
+  async listAlertDeadLetters() {
+    await this.ensureInitialized();
+    const result = await this.postgres.query<JsonRow<AlertDeadLetterRecord>>(
+      "select payload from alert_dead_letters order by created_at desc"
+    );
+    return result.rows.map((row) => row.payload);
+  }
+
+  async countPendingAlertDeadLettersByChannel() {
+    await this.ensureInitialized();
+    const result = await this.postgres.query<{ channel_name: string; count: string }>(
+      `
+        select channel_name, count(*)::text as count
+        from alert_dead_letters
+        where resolved_at is null
+        group by channel_name
+      `
+    );
+    return new Map(result.rows.map((row) => [row.channel_name, Number(row.count)]));
   }
 
   async listIncidents() {
@@ -463,12 +550,30 @@ export class StoreService implements OnModuleInit {
         payload jsonb not null
       );
 
+      create table if not exists alert_channel_states (
+        channel_name text primary key,
+        enabled boolean not null,
+        updated_at timestamptz not null,
+        payload jsonb not null
+      );
+
+      create table if not exists alert_dead_letters (
+        dead_letter_id text primary key,
+        channel_name text not null,
+        provider text not null,
+        target_service text not null,
+        created_at timestamptz not null,
+        resolved_at timestamptz null,
+        payload jsonb not null
+      );
+
       create index if not exists idx_incidents_updated_at on incidents(updated_at desc);
       create index if not exists idx_approvals_incident_created_at on approvals(incident_id, created_at desc);
       create index if not exists idx_audit_events_incident_created_at on audit_events(incident_id, created_at desc);
       create index if not exists idx_audit_events_execution_created_at on audit_events(execution_id, created_at desc);
       create index if not exists idx_metric_history_service_metric_created_at on metric_history(service_id, metric_name, created_at desc);
       create index if not exists idx_target_alert_states_provider_target on target_alert_states(provider, target_service);
+      create index if not exists idx_alert_dead_letters_channel_created_at on alert_dead_letters(channel_name, created_at desc);
     `);
 
     await this.seedServices();
