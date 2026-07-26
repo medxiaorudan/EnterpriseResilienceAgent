@@ -12,6 +12,10 @@ It is designed to be easy to explain to non-technical users:
 
 ![System overview](https://github.com/user-attachments/assets/c1dd3aec-a5bf-4640-93fb-37ed1cfe2341)
 
+
+https://github.com/user-attachments/assets/e433f0f6-f233-4a19-aca3-2e88c27fc891
+
+
 ## What This Project Does
 
 The project acts as a resilience control center for service incidents.
