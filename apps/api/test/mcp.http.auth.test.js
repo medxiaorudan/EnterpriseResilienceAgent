@@ -43,7 +43,9 @@ describe("mcp http auth", () => {
       allowUnauthenticated: false
     });
 
-    assert.deepEqual(result, { ok: true });
+    assert.equal(result.ok, true);
+    assert.equal(result.authInfo, undefined);
+    assert.equal(result.identity, undefined);
   });
 
   test("accepts requests when unauthenticated mode is explicitly allowed", async () => {
@@ -52,7 +54,12 @@ describe("mcp http auth", () => {
       allowUnauthenticated: true
     });
 
-    assert.deepEqual(result, { ok: true });
+    assert.equal(result.ok, true);
+    assert.deepEqual(result.identity, {
+      userId: "anonymous",
+      role: "viewer",
+      source: "unauthenticated"
+    });
   });
 
   test("accepts valid OIDC JWT with matching issuer and audience", async () => {
@@ -60,7 +67,12 @@ describe("mcp http auth", () => {
     const jwk = await exportJWK(publicKey);
     jwk.kid = "test-key";
 
-    const token = await new SignJWT({ sub: "mcp-client" })
+    const token = await new SignJWT({
+      sub: "mcp-client",
+      preferred_username: "ops.manager",
+      roles: ["incident_manager"],
+      scope: "mcp.read mcp.write"
+    })
       .setProtectedHeader({ alg: "RS256", kid: "test-key" })
       .setIssuer("https://issuer.example.com")
       .setAudience("enterprise-resilience-mcp")
@@ -73,11 +85,24 @@ describe("mcp http auth", () => {
       oidc: {
         issuer: "https://issuer.example.com",
         audience: "enterprise-resilience-mcp",
-        jwksJson: JSON.stringify({ keys: [jwk] })
+        jwksJson: JSON.stringify({ keys: [jwk] }),
+        roleMapJson: JSON.stringify({
+          incident_manager: "incident-manager"
+        }),
+        defaultRole: "viewer"
       }
     });
 
-    assert.deepEqual(result, { ok: true });
+    assert.equal(result.ok, true);
+    assert.deepEqual(result.identity, {
+      userId: "ops.manager",
+      role: "incident-manager",
+      source: "oidc"
+    });
+    assert.equal(result.authInfo.clientId, "ops.manager");
+    assert.deepEqual(result.authInfo.scopes, ["mcp.read", "mcp.write"]);
+    assert.equal(result.authInfo.extra.eraUserId, "ops.manager");
+    assert.equal(result.authInfo.extra.eraRole, "incident-manager");
   });
 
   test("rejects OIDC JWT with wrong audience", async () => {

@@ -13,6 +13,11 @@ const oidcIssuer = process.env.ERA_MCP_OIDC_ISSUER;
 const oidcAudience = process.env.ERA_MCP_OIDC_AUDIENCE;
 const oidcJwksUrl = process.env.ERA_MCP_OIDC_JWKS_URL;
 const oidcJwksJson = process.env.ERA_MCP_OIDC_JWKS_JSON;
+const oidcUserIdClaim = process.env.ERA_MCP_OIDC_USER_ID_CLAIM;
+const oidcUserNameClaim = process.env.ERA_MCP_OIDC_USER_NAME_CLAIM;
+const oidcRoleClaim = process.env.ERA_MCP_OIDC_ROLE_CLAIM;
+const oidcRoleMapJson = process.env.ERA_MCP_OIDC_ROLE_MAP_JSON;
+const oidcDefaultRole = process.env.ERA_MCP_OIDC_DEFAULT_ROLE;
 const mcpPublicUrl = process.env.ERA_MCP_PUBLIC_URL;
 const oidcAuthorizationEndpoint = process.env.ERA_MCP_OIDC_AUTHORIZATION_ENDPOINT;
 const oidcTokenEndpoint = process.env.ERA_MCP_OIDC_TOKEN_ENDPOINT;
@@ -94,7 +99,12 @@ createServer(async (req, res) => {
               issuer: oidcIssuer,
               audience: oidcAudience,
               jwksUrl: oidcJwksUrl,
-              jwksJson: oidcJwksJson
+              jwksJson: oidcJwksJson,
+              userIdClaim: oidcUserIdClaim,
+              userNameClaim: oidcUserNameClaim,
+              roleClaim: oidcRoleClaim,
+              roleMapJson: oidcRoleMapJson,
+              defaultRole: oidcDefaultRole
             }
           : undefined
     });
@@ -107,7 +117,9 @@ createServer(async (req, res) => {
       return;
     }
 
-    const response = await mcpHttpHandler.fetch(request);
+    const response = await mcpHttpHandler.fetch(request, {
+      authInfo: authResult.authInfo
+    });
 
     res.writeHead(response.status, Object.fromEntries(response.headers.entries()));
     if (!response.body) {

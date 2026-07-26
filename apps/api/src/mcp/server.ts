@@ -1,10 +1,10 @@
-import { McpServer, createMcpHandler } from "@modelcontextprotocol/server";
+import { McpServer, createMcpHandler, type McpRequestContext } from "@modelcontextprotocol/server";
 import type { AuthSession, IncidentRecord, PlatformStatusSummary } from "@enterprise-resilience/contracts";
 import { z } from "zod";
 
 const apiBaseUrl = (process.env.ERA_API_URL ?? "http://127.0.0.1:3000/api").replace(/\/$/, "");
-const userId = process.env.ERA_MCP_USER_ID ?? "manager.demo";
-const role = process.env.ERA_MCP_ROLE ?? "incident-manager";
+const defaultUserId = process.env.ERA_MCP_USER_ID ?? "manager.demo";
+const defaultRole = process.env.ERA_MCP_ROLE ?? "incident-manager";
 
 type ApiErrorShape = {
   message?: string | string[];
@@ -12,16 +12,40 @@ type ApiErrorShape = {
   statusCode?: number;
 };
 
+interface McpApiIdentity {
+  userId: string;
+  role: string;
+  source: string;
+}
+
 function describeJson(value: unknown) {
   return JSON.stringify(value, null, 2);
 }
 
-async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
+function resolveConfiguredIdentity(): McpApiIdentity {
+  return {
+    userId: defaultUserId,
+    role: defaultRole,
+    source: "configured"
+  };
+}
+
+function resolveRequestIdentity(context: McpRequestContext | undefined): McpApiIdentity {
+  const extra = context?.authInfo?.extra;
+
+  return {
+    userId: typeof extra?.eraUserId === "string" ? extra.eraUserId : defaultUserId,
+    role: typeof extra?.eraRole === "string" ? extra.eraRole : defaultRole,
+    source: typeof extra?.eraSource === "string" ? extra.eraSource : "configured"
+  };
+}
+
+async function apiRequestAs<T>(path: string, identity: McpApiIdentity, init?: RequestInit): Promise<T> {
   const response = await fetch(`${apiBaseUrl}${path}`, {
     headers: {
       "Content-Type": "application/json",
-      "x-era-user": userId,
-      "x-era-role": role,
+      "x-era-user": identity.userId,
+      "x-era-role": identity.role,
       ...(init?.headers ?? {})
     },
     ...init
@@ -100,12 +124,13 @@ function formatPlatformStatus(status: PlatformStatusSummary) {
   ].join("\n");
 }
 
-export function buildMcpServer() {
+export function buildMcpServer(context?: McpRequestContext) {
+  const identity = resolveRequestIdentity(context);
   const server = new McpServer(
     { name: "enterprise-resilience-agent", version: "0.1.0" },
     {
       instructions:
-        "Use these tools to inspect incidents, approvals, runbooks, audit history, and platform readiness. Read incident details before approving or escalating. Approval tools act as the configured MCP role."
+        "Use these tools to inspect incidents, approvals, runbooks, audit history, and platform readiness. Read incident details before approving or escalating. Approval tools act as the authenticated MCP role when remote OIDC is configured, otherwise they use the configured fallback MCP role."
     }
   );
 
@@ -116,7 +141,7 @@ export function buildMcpServer() {
       description: "Show deployment readiness, component health, and the best entry points for users.",
       annotations: { readOnlyHint: true }
     },
-    async () => safeTool(() => apiRequest<PlatformStatusSummary>("/platform/status"), formatPlatformStatus)
+    async () => safeTool(() => apiRequestAs<PlatformStatusSummary>("/platform/status", identity), formatPlatformStatus)
   );
 
   server.registerTool(
@@ -127,8 +152,8 @@ export function buildMcpServer() {
       annotations: { readOnlyHint: true }
     },
     async () =>
-      safeTool(() => apiRequest<AuthSession>("/auth/session"), (session) =>
-        `${session.displayName} (${session.role}) via ${session.source}`
+      safeTool(() => apiRequestAs<AuthSession>("/auth/session", identity), (session) =>
+        `${session.displayName} (${session.role}) via ${session.source}; MCP source ${identity.source}`
       )
   );
 
@@ -139,7 +164,7 @@ export function buildMcpServer() {
       description: "List the demo users and roles available for UI or MCP role configuration.",
       annotations: { readOnlyHint: true }
     },
-    async () => safeTool(() => apiRequest("/auth/users"))
+    async () => safeTool(() => apiRequestAs("/auth/users", identity))
   );
 
   server.registerTool(
@@ -155,7 +180,7 @@ export function buildMcpServer() {
     },
     async ({ status, severity }) =>
       safeTool(async () => {
-        const incidents = await apiRequest<IncidentRecord[]>("/incidents");
+        const incidents = await apiRequestAs<IncidentRecord[]>("/incidents", identity);
         return incidents.filter(
           (incident) =>
             (!status || incident.status === status) &&
@@ -174,7 +199,7 @@ export function buildMcpServer() {
       }),
       annotations: { readOnlyHint: true }
     },
-    async ({ incidentId }) => safeTool(() => apiRequest(`/incidents/${incidentId}`))
+    async ({ incidentId }) => safeTool(() => apiRequestAs(`/incidents/${incidentId}`, identity))
   );
 
   server.registerTool(
@@ -192,7 +217,7 @@ export function buildMcpServer() {
     },
     async ({ incidentId, comment, dryRun, idempotencyKey }) =>
       safeTool(() =>
-        apiRequest(`/incidents/${incidentId}/approve`, {
+        apiRequestAs(`/incidents/${incidentId}/approve`, identity, {
           method: "POST",
           body: JSON.stringify({ comment, dryRun, idempotencyKey })
         })
@@ -212,7 +237,7 @@ export function buildMcpServer() {
     },
     async ({ incidentId, comment }) =>
       safeTool(() =>
-        apiRequest(`/incidents/${incidentId}/reject`, {
+        apiRequestAs(`/incidents/${incidentId}/reject`, identity, {
           method: "POST",
           body: JSON.stringify({ comment })
         })
@@ -232,7 +257,7 @@ export function buildMcpServer() {
     },
     async ({ incidentId, comment }) =>
       safeTool(() =>
-        apiRequest(`/incidents/${incidentId}/escalate`, {
+        apiRequestAs(`/incidents/${incidentId}/escalate`, identity, {
           method: "POST",
           body: JSON.stringify({ comment })
         })
@@ -246,7 +271,7 @@ export function buildMcpServer() {
       description: "List the currently registered recovery runbooks.",
       annotations: { readOnlyHint: true }
     },
-    async () => safeTool(() => apiRequest("/runbooks"))
+    async () => safeTool(() => apiRequestAs("/runbooks", identity))
   );
 
   server.registerTool(
@@ -262,7 +287,7 @@ export function buildMcpServer() {
     },
     async ({ runbookId, dryRun }) =>
       safeTool(() =>
-        apiRequest(`/runbooks/${runbookId}/simulate`, {
+        apiRequestAs(`/runbooks/${runbookId}/simulate`, identity, {
           method: "POST",
           body: JSON.stringify({ dryRun })
         })
@@ -281,7 +306,7 @@ export function buildMcpServer() {
     },
     async ({ incidentId }) =>
       safeTool(() =>
-        apiRequest(incidentId ? `/audit/incidents/${incidentId}` : "/audit/events")
+        apiRequestAs(incidentId ? `/audit/incidents/${incidentId}` : "/audit/events", identity)
       )
   );
 
@@ -292,10 +317,11 @@ export function buildMcpServer() {
       description: "List the protected services and their current health summaries.",
       annotations: { readOnlyHint: true }
     },
-    async () => safeTool(() => apiRequest("/services"))
+    async () => safeTool(() => apiRequestAs("/services", identity))
   );
 
   return server;
 }
 
-export const mcpHttpHandler = createMcpHandler(() => buildMcpServer());
+export const mcpHttpHandler = createMcpHandler(buildMcpServer);
+export const defaultMcpIdentity = resolveConfiguredIdentity();

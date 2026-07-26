@@ -176,6 +176,8 @@ Important:
 - Keep `AWS_ECS_LIVE_EXECUTION=false` until you are ready for bounded live actions
 - Use Postgres and Redis before production use
 - Set public URLs correctly so the dashboard and API links work as expected
+- For remote MCP with OIDC, map token claims to agent roles with `ERA_MCP_OIDC_ROLE_CLAIM`, `ERA_MCP_OIDC_ROLE_MAP_JSON`, and `ERA_MCP_OIDC_DEFAULT_ROLE`
+- For packaged desktop auto-updates, set `ERA_OPERATOR_UPDATE_URL` at build time; `ERA_OPERATOR_AUTO_UPDATE_URL` is an optional runtime override
 
 ## How To Run It
 
@@ -217,10 +219,12 @@ For remote MCP clients:
 1. Start the API with `npm run dev:api`
 2. Start the HTTP MCP server with `npm run start:mcp:http`
 3. Prefer OIDC by setting `ERA_MCP_OIDC_ISSUER`, `ERA_MCP_OIDC_AUDIENCE`, and `ERA_MCP_OIDC_JWKS_URL`
-4. Or set `ERA_MCP_HTTP_BEARER_TOKEN` as a simpler fallback
-5. Point the client at `http://YOUR_HOST:3101/mcp`
-6. Send `Authorization: Bearer YOUR_TOKEN`
-7. Check health at `http://YOUR_HOST:3101/healthz`
+4. Map your identity provider claims to platform roles with `ERA_MCP_OIDC_USER_NAME_CLAIM`, `ERA_MCP_OIDC_ROLE_CLAIM`, and `ERA_MCP_OIDC_ROLE_MAP_JSON`
+5. Set `ERA_MCP_OIDC_DEFAULT_ROLE=viewer` or another safe fallback role
+6. Or set `ERA_MCP_HTTP_BEARER_TOKEN` as a simpler fallback
+7. Point the client at `http://YOUR_HOST:3101/mcp`
+8. Send `Authorization: Bearer YOUR_TOKEN`
+9. Check health at `http://YOUR_HOST:3101/healthz`
 
 The HTTP MCP server can also expose OAuth discovery metadata when these are configured:
 
@@ -239,6 +243,8 @@ That enables:
 2. Run `npm run start:operator`
 3. Enter a dashboard URL such as `http://127.0.0.1:5173/overview` or `https://ops.example.com/overview`
 4. To build downloadable packages, run `npm run build:operator`
+5. To publish update-ready packages, set `ERA_OPERATOR_UPDATE_URL=https://downloads.example.com/operator` and run `npm run publish:operator`
+6. Signed macOS and Windows builds use the normal Electron Builder signing credentials you provide in the build environment
 
 ## Project Structure
 

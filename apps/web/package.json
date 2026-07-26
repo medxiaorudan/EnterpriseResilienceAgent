@@ -9,7 +9,8 @@
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
     "desktop:dev": "electron electron/main.mjs",
-    "desktop:build": "npm run build && electron-builder --linux AppImage --mac dmg --win nsis"
+    "desktop:build": "npm run build && electron-builder --config electron-builder.config.mjs --linux AppImage --mac dmg --win nsis",
+    "desktop:publish": "npm run build && electron-builder --config electron-builder.config.mjs --publish always --linux AppImage --mac dmg --win nsis"
   },
   "dependencies": {
     "@enterprise-resilience/contracts": "0.1.0",
@@ -17,6 +18,7 @@
     "@tanstack/react-query": "^5.62.8",
     "electron": "^43.2.0",
     "electron-builder": "^26.15.3",
+    "electron-updater": "^6.8.9",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-router-dom": "^7.1.1"
@@ -27,33 +29,5 @@
     "@vitejs/plugin-react": "^4.3.4",
     "typescript": "^5.7.2",
     "vite": "^6.0.3"
-  },
-  "build": {
-    "appId": "com.enterprise.resilience.agent",
-    "productName": "Enterprise Resilience Agent",
-    "files": [
-      "dist/**/*",
-      "electron/**/*",
-      "package.json"
-    ],
-    "directories": {
-      "output": "release"
-    },
-    "linux": {
-      "target": [
-        "AppImage"
-      ],
-      "category": "Utility"
-    },
-    "mac": {
-      "target": [
-        "dmg"
-      ]
-    },
-    "win": {
-      "target": [
-        "nsis"
-      ]
-    }
   }
 }
