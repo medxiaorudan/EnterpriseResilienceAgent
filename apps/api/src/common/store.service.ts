@@ -11,6 +11,7 @@ import {
   type MetricSeriesPoint,
   type RegisteredRunbook,
   type StoredMetricSample,
+  type TargetAlertStateRecord,
   type VerificationResult,
   seedAuditEvents,
   seedIncidents,
@@ -121,6 +122,38 @@ export class StoreService implements OnModuleInit {
       [record.serviceId, record.metricName]
     );
 
+    return record;
+  }
+
+  async getTargetAlertState(provider: TargetAlertStateRecord["provider"], targetService: string) {
+    await this.ensureInitialized();
+    const result = await this.postgres.query<JsonRow<TargetAlertStateRecord>>(
+      "select payload from target_alert_states where provider = $1 and target_service = $2",
+      [provider, targetService]
+    );
+    return result.rows[0]?.payload;
+  }
+
+  async saveTargetAlertState(record: TargetAlertStateRecord) {
+    await this.ensureInitialized();
+    await this.postgres.query(
+      `
+        insert into target_alert_states (
+          alert_key,
+          provider,
+          target_service,
+          state,
+          updated_at,
+          payload
+        )
+        values ($1, $2, $3, $4, $5, $6::jsonb)
+        on conflict (alert_key) do update set
+          state = excluded.state,
+          updated_at = excluded.updated_at,
+          payload = excluded.payload
+      `,
+      [record.alertKey, record.provider, record.targetService, record.state, record.updatedAt, JSON.stringify(record)]
+    );
     return record;
   }
 
@@ -421,11 +454,21 @@ export class StoreService implements OnModuleInit {
         payload jsonb not null
       );
 
+      create table if not exists target_alert_states (
+        alert_key text primary key,
+        provider text not null,
+        target_service text not null references services(service_id) on delete cascade,
+        state text not null,
+        updated_at timestamptz not null,
+        payload jsonb not null
+      );
+
       create index if not exists idx_incidents_updated_at on incidents(updated_at desc);
       create index if not exists idx_approvals_incident_created_at on approvals(incident_id, created_at desc);
       create index if not exists idx_audit_events_incident_created_at on audit_events(incident_id, created_at desc);
       create index if not exists idx_audit_events_execution_created_at on audit_events(execution_id, created_at desc);
       create index if not exists idx_metric_history_service_metric_created_at on metric_history(service_id, metric_name, created_at desc);
+      create index if not exists idx_target_alert_states_provider_target on target_alert_states(provider, target_service);
     `);
 
     await this.seedServices();

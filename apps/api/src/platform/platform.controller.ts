@@ -21,4 +21,24 @@ export class PlatformController {
   ) {
     return this.platformService.rollbackTarget(provider, targetService, session);
   }
+
+  @Post("targets/:provider/:targetService/acknowledge-alert")
+  @Roles("engineer", "incident-manager")
+  acknowledgeAlert(
+    @Param("provider") provider: CloudProvider,
+    @Param("targetService") targetService: string,
+    @CurrentSession() session: AuthSession
+  ) {
+    return this.platformService.acknowledgeAlert(provider, targetService, session);
+  }
+
+  @Post("targets/:provider/:targetService/open-incident")
+  @Roles("engineer", "incident-manager")
+  openIncidentFromAlert(
+    @Param("provider") provider: CloudProvider,
+    @Param("targetService") targetService: string,
+    @CurrentSession() session: AuthSession
+  ) {
+    return this.platformService.openIncidentFromAlert(provider, targetService, session);
+  }
 }

@@ -301,6 +301,23 @@ export interface PlatformProviderTarget {
   metricAlertSummary?: string;
   lastCollectedAt?: string;
   breachedMetrics?: string[];
+  alertAcknowledgedAt?: string;
+  alertAcknowledgedBy?: string;
+  alertIncidentId?: string;
+}
+
+export interface TargetAlertStateRecord {
+  alertKey: string;
+  provider: CloudProvider;
+  targetService: string;
+  state: "normal" | "warning" | "breached";
+  summary: string;
+  lastCollectedAt?: string;
+  breachedMetrics: string[];
+  acknowledgedAt?: string;
+  acknowledgedBy?: string;
+  incidentId?: string;
+  updatedAt: string;
 }
 
 export interface PlatformStatusSummary {

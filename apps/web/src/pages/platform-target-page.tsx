@@ -9,7 +9,12 @@ import {
   getServiceIncidents,
   getServiceMetrics
 } from "@/api/incidents.js";
-import { getPlatformStatus, rollbackPlatformTarget } from "@/api/platform.js";
+import {
+  acknowledgePlatformAlert,
+  getPlatformStatus,
+  openIncidentForPlatformAlert,
+  rollbackPlatformTarget
+} from "@/api/platform.js";
 
 function formatRelativeTime(timestamp: string) {
   const deltaMs = Date.now() - new Date(timestamp).getTime();
@@ -137,6 +142,22 @@ export function PlatformTargetPage() {
       await queryClient.invalidateQueries({ queryKey: ["audit-events"] });
     }
   });
+  const acknowledgeAlertMutation = useMutation({
+    mutationFn: () => acknowledgePlatformAlert(provider as "aws" | "gcp", targetService),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["platform-status"] });
+      await queryClient.invalidateQueries({ queryKey: ["audit-events"] });
+    }
+  });
+  const openIncidentMutation = useMutation({
+    mutationFn: () => openIncidentForPlatformAlert(provider as "aws" | "gcp", targetService),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["platform-status"] });
+      await queryClient.invalidateQueries({ queryKey: ["incidents"] });
+      await queryClient.invalidateQueries({ queryKey: ["service-incidents", targetService] });
+      await queryClient.invalidateQueries({ queryKey: ["audit-events"] });
+    }
+  });
 
   const platform = platformQuery.data;
   const target = platform?.providerTargets.find(
@@ -155,6 +176,7 @@ export function PlatformTargetPage() {
 
   const rollbackHistory = target.recentActivity.filter((activity) => activity.kind === "rollback");
   const latestLiveTimestamp = target.lastSuccessfulLiveAction?.timestamp;
+  const hasActiveAlert = target.metricAlertState && target.metricAlertState !== "normal";
   const readiness = getReadinessSummary({
     executionMode: target.executionMode,
     healthStatus: service?.health.status,
@@ -181,15 +203,35 @@ export function PlatformTargetPage() {
             </span>
           ) : null}
         </div>
-        {target.rollbackRunbookId ? (
+        {target.rollbackRunbookId || hasActiveAlert ? (
           <div className="actions-row">
-            <button
-              className="secondary-button"
-              onClick={() => rollbackMutation.mutate()}
-              disabled={rollbackMutation.isPending}
-            >
-              {rollbackMutation.isPending ? "Running rollback..." : "Run rollback"}
-            </button>
+            {target.rollbackRunbookId ? (
+              <button
+                className="secondary-button"
+                onClick={() => rollbackMutation.mutate()}
+                disabled={rollbackMutation.isPending}
+              >
+                {rollbackMutation.isPending ? "Running rollback..." : "Run rollback"}
+              </button>
+            ) : null}
+            {hasActiveAlert ? (
+              <button
+                className="secondary-button"
+                onClick={() => acknowledgeAlertMutation.mutate()}
+                disabled={acknowledgeAlertMutation.isPending}
+              >
+                {acknowledgeAlertMutation.isPending ? "Acknowledging..." : "Acknowledge alert"}
+              </button>
+            ) : null}
+            {hasActiveAlert && !target.alertIncidentId ? (
+              <button
+                className="primary-button"
+                onClick={() => openIncidentMutation.mutate()}
+                disabled={openIncidentMutation.isPending}
+              >
+                {openIncidentMutation.isPending ? "Opening incident..." : "Open incident"}
+              </button>
+            ) : null}
           </div>
         ) : null}
       </section>
@@ -241,6 +283,17 @@ export function PlatformTargetPage() {
               <p className="muted">Runbook: {approvalContext.runbookId}</p>
             ) : null}
             {target.metricAlertSummary ? <p className="muted">{target.metricAlertSummary}</p> : null}
+            {target.alertAcknowledgedAt ? (
+              <p className="muted">
+                Acknowledged by {target.alertAcknowledgedBy ?? "operator"} ·{" "}
+                {new Date(target.alertAcknowledgedAt).toLocaleString()}
+              </p>
+            ) : null}
+            {target.alertIncidentId ? (
+              <Link to={`/incidents/${target.alertIncidentId}`} className="target-link">
+                Open incident {target.alertIncidentId}
+              </Link>
+            ) : null}
           </div>
           {relatedIncidents.length > 0 ? (
             <div className="activity-list">

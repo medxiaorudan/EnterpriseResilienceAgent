@@ -17,7 +17,8 @@ class FakePostgresService {
       incidents: new Map(),
       approvals: new Map(),
       audit_events: new Map(),
-      metric_history: new Map()
+      metric_history: new Map(),
+      target_alert_states: new Map()
     };
   }
 
@@ -129,6 +130,19 @@ class FakePostgresService {
       return this.result([]);
     }
 
+    if (sql.startsWith("insert into target_alert_states")) {
+      const [alertKey, provider, targetService, state, updatedAt, payload] = values;
+      this.tables.target_alert_states.set(alertKey, {
+        alert_key: alertKey,
+        provider,
+        target_service: targetService,
+        state,
+        updated_at: updatedAt,
+        payload: JSON.parse(payload)
+      });
+      return this.result([]);
+    }
+
     if (sql.startsWith("delete from metric_history")) {
       const [serviceId, metricName] = values;
       const matches = [...this.tables.metric_history.values()]
@@ -151,6 +165,13 @@ class FakePostgresService {
 
     if (sql === "select payload from services where service_id = $1") {
       const row = this.tables.services.get(values[0]);
+      return this.result(row ? [{ payload: row.payload }] : []);
+    }
+
+    if (sql === "select payload from target_alert_states where provider = $1 and target_service = $2") {
+      const row = [...this.tables.target_alert_states.values()].find(
+        (entry) => entry.provider === values[0] && entry.target_service === values[1]
+      );
       return this.result(row ? [{ payload: row.payload }] : []);
     }
 
@@ -386,5 +407,30 @@ describe("store persistence behavior", () => {
     assert.equal(points.length, 6);
     assert.equal(points[0].value, 902);
     assert.equal(points[5].value, 907);
+  });
+
+  test("persists target alert state records", async () => {
+    const store = new StoreService(new FakePostgresService());
+    await store.onModuleInit();
+
+    await store.saveTargetAlertState({
+      alertKey: "gcp:payment-routing",
+      provider: "gcp",
+      targetService: "payment-routing",
+      state: "breached",
+      summary: "Request error rate stayed breached.",
+      lastCollectedAt: "2026-07-26T22:10:00.000Z",
+      breachedMetrics: ["Request error rate"],
+      acknowledgedAt: "2026-07-26T22:12:00.000Z",
+      acknowledgedBy: "Morgan Manager",
+      incidentId: "INC-2026-0042",
+      updatedAt: "2026-07-26T22:12:00.000Z"
+    });
+
+    const alert = await store.getTargetAlertState("gcp", "payment-routing");
+
+    assert.equal(alert?.state, "breached");
+    assert.equal(alert?.acknowledgedBy, "Morgan Manager");
+    assert.equal(alert?.incidentId, "INC-2026-0042");
   });
 });

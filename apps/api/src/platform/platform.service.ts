@@ -1,10 +1,16 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
-import type { AuthSession, CloudProvider, PlatformStatusSummary } from "@enterprise-resilience/contracts";
+import type {
+  AuthSession,
+  CloudProvider,
+  PlatformStatusSummary,
+  TargetAlertStateRecord
+} from "@enterprise-resilience/contracts";
 import { AwsConfigService } from "../cloud-adapters/aws-config.service.js";
 import { CloudAdaptersService } from "../cloud-adapters/cloud-adapters.service.js";
 import { GcpConfigService } from "../cloud-adapters/gcp-config.service.js";
 import { StoreService } from "../common/store.service.js";
+import { IncidentsService } from "../incidents/incidents.service.js";
 import { getMetricDefinitions, getThresholdStatus } from "../services/metric-policy.js";
 
 @Injectable()
@@ -13,7 +19,8 @@ export class PlatformService {
     private readonly awsConfig: AwsConfigService,
     private readonly gcpConfig: GcpConfigService,
     private readonly cloudAdapters: CloudAdaptersService,
-    private readonly store: StoreService
+    private readonly store: StoreService,
+    private readonly incidentsService: IncidentsService
   ) {}
 
   async getStatus(): Promise<PlatformStatusSummary> {
@@ -108,6 +115,7 @@ export class PlatformService {
     };
 
     const buildMetricAlert = async (provider: "aws" | "gcp", targetService: string) => {
+      const storedAlert = await this.store.getTargetAlertState(provider, targetService);
       const definitions = getMetricDefinitions(provider);
       const metricHistory = await this.store.listMetricHistory(
         targetService,
@@ -138,29 +146,38 @@ export class PlatformService {
 
       if (breachedMetrics.length > 0) {
         return {
-          metricAlertState: "breached" as const,
-          metricAlertSummary: `${breachedMetrics.join(", ")} stayed breached across the last 3 samples.`,
-          lastCollectedAt: collectedAt ? new Date(collectedAt).toISOString() : undefined,
-          breachedMetrics
+          metricAlertState: storedAlert?.state ?? ("breached" as const),
+          metricAlertSummary: storedAlert?.summary ?? `${breachedMetrics.join(", ")} stayed breached across the last 3 samples.`,
+          lastCollectedAt: storedAlert?.lastCollectedAt ?? (collectedAt ? new Date(collectedAt).toISOString() : undefined),
+          breachedMetrics,
+          alertAcknowledgedAt: storedAlert?.acknowledgedAt,
+          alertAcknowledgedBy: storedAlert?.acknowledgedBy,
+          alertIncidentId: storedAlert?.incidentId
         };
       }
 
       if (warningMetrics.length > 0) {
         return {
-          metricAlertState: "warning" as const,
-          metricAlertSummary: `${warningMetrics.join(", ")} stayed elevated across the last 3 samples.`,
-          lastCollectedAt: collectedAt ? new Date(collectedAt).toISOString() : undefined,
-          breachedMetrics: warningMetrics
+          metricAlertState: storedAlert?.state ?? ("warning" as const),
+          metricAlertSummary: storedAlert?.summary ?? `${warningMetrics.join(", ")} stayed elevated across the last 3 samples.`,
+          lastCollectedAt: storedAlert?.lastCollectedAt ?? (collectedAt ? new Date(collectedAt).toISOString() : undefined),
+          breachedMetrics: warningMetrics,
+          alertAcknowledgedAt: storedAlert?.acknowledgedAt,
+          alertAcknowledgedBy: storedAlert?.acknowledgedBy,
+          alertIncidentId: storedAlert?.incidentId
         };
       }
 
       return {
-        metricAlertState: "normal" as const,
-        metricAlertSummary: collectedAt
+        metricAlertState: storedAlert?.state ?? ("normal" as const),
+        metricAlertSummary: storedAlert?.summary ?? (collectedAt
           ? "Recent samples remain within policy thresholds."
-          : "Metric polling has not collected enough history yet.",
-        lastCollectedAt: collectedAt ? new Date(collectedAt).toISOString() : undefined,
-        breachedMetrics: []
+          : "Metric polling has not collected enough history yet."),
+        lastCollectedAt: storedAlert?.lastCollectedAt ?? (collectedAt ? new Date(collectedAt).toISOString() : undefined),
+        breachedMetrics: storedAlert?.breachedMetrics ?? [],
+        alertAcknowledgedAt: storedAlert?.acknowledgedAt,
+        alertAcknowledgedBy: storedAlert?.acknowledgedBy,
+        alertIncidentId: storedAlert?.incidentId
       };
     };
 
@@ -295,6 +312,126 @@ export class PlatformService {
         "Configure DATABASE_URL and REDIS_URL before production use.",
         "Keep AWS and GCP live execution off until allowed targets and execution identities are verified."
       ]
+    };
+  }
+
+  async acknowledgeAlert(provider: CloudProvider, targetService: string, session: AuthSession) {
+    const alert = await this.resolveTargetAlert(provider, targetService);
+    if (!alert || alert.state === "normal") {
+      throw new BadRequestException(`No active alert is available to acknowledge for ${provider}/${targetService}.`);
+    }
+
+    const updatedAt = new Date().toISOString();
+    await this.store.saveTargetAlertState({
+      ...alert,
+      acknowledgedAt: updatedAt,
+      acknowledgedBy: session.displayName,
+      updatedAt
+    });
+    await this.store.recordAudit({
+      actor: session.displayName,
+      provider,
+      targetService,
+      incidentId: alert.incidentId,
+      category: "policy",
+      summary: "Target alert acknowledged",
+      detail: `${session.displayName} acknowledged the ${alert.state} alert for ${targetService}.`
+    });
+
+    return this.getStatus();
+  }
+
+  async openIncidentFromAlert(provider: CloudProvider, targetService: string, session: AuthSession) {
+    const alert = await this.resolveTargetAlert(provider, targetService);
+    if (!alert || alert.state === "normal") {
+      throw new BadRequestException(`No active alert is available to open an incident for ${provider}/${targetService}.`);
+    }
+
+    if (alert.incidentId) {
+      return this.incidentsService.getOne(alert.incidentId);
+    }
+
+    const incident = await this.incidentsService.create({
+      title: `${targetService} sustained ${alert.state} metric alert`,
+      primaryService: targetService,
+      severity: alert.state === "breached" ? "SEV-2" : "SEV-3",
+      summary: `${targetService} triggered a sustained ${alert.state} alert from metric polling.`,
+      trigger: alert.summary
+    });
+
+    const updatedAt = new Date().toISOString();
+    await this.store.saveTargetAlertState({
+      ...alert,
+      incidentId: incident.incidentId,
+      acknowledgedAt: alert.acknowledgedAt ?? updatedAt,
+      acknowledgedBy: alert.acknowledgedBy ?? session.displayName,
+      updatedAt
+    });
+    await this.store.recordAudit({
+      actor: session.displayName,
+      provider,
+      targetService,
+      incidentId: incident.incidentId,
+      category: "incident",
+      summary: "Target alert incident opened",
+      detail: `${session.displayName} opened ${incident.incidentId} from the ${alert.state} alert on ${targetService}.`
+    });
+
+    return incident;
+  }
+
+  private async resolveTargetAlert(
+    provider: CloudProvider,
+    targetService: string
+  ): Promise<TargetAlertStateRecord | undefined> {
+    const storedAlert = await this.store.getTargetAlertState(provider, targetService);
+    if (storedAlert) {
+      return storedAlert;
+    }
+
+    const definitions = getMetricDefinitions(provider);
+    const metricHistory = await this.store.listMetricHistory(
+      targetService,
+      definitions.map((metric) => metric.metricName),
+      3
+    );
+    const collectedAt = Math.max(
+      0,
+      ...[...metricHistory.values()].flat().map((sample) => new Date(sample.timestamp).getTime())
+    );
+    const breachedMetrics = definitions
+      .filter((metric) => {
+        const samples = metricHistory.get(metric.metricName) ?? [];
+        return samples.length === 3 && samples.every((sample) => getThresholdStatus(metric, sample.value) === "breached");
+      })
+      .map((metric) => metric.label);
+    const warningMetrics = definitions
+      .filter((metric) => {
+        const samples = metricHistory.get(metric.metricName) ?? [];
+        return (
+          samples.length === 3 &&
+          breachedMetrics.includes(metric.label) === false &&
+          samples.every((sample) => getThresholdStatus(metric, sample.value) !== "within-threshold")
+        );
+      })
+      .map((metric) => metric.label);
+    const state: TargetAlertStateRecord["state"] =
+      breachedMetrics.length > 0 ? "breached" : warningMetrics.length > 0 ? "warning" : "normal";
+
+    return {
+      alertKey: `${provider}:${targetService}`,
+      provider,
+      targetService,
+      state,
+      summary:
+        state === "breached"
+          ? `${breachedMetrics.join(", ")} stayed breached across the last 3 samples.`
+          : state === "warning"
+            ? `${warningMetrics.join(", ")} stayed elevated across the last 3 samples.`
+            : "Recent samples remain within policy thresholds.",
+      lastCollectedAt: collectedAt ? new Date(collectedAt).toISOString() : undefined,
+      breachedMetrics: state === "breached" ? breachedMetrics : warningMetrics,
+      updatedAt: collectedAt ? new Date(collectedAt).toISOString() : new Date().toISOString()
     };
   }
 

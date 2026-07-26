@@ -16,6 +16,7 @@ class FakeStoreService {
     this.runbooks = new Map();
     this.services = new Map();
     this.metricHistory = new Map();
+    this.targetAlertStates = new Map();
     for (const incident of structuredClone(seed)) {
       this.incidents.set(incident.incidentId, incident);
     }
@@ -56,6 +57,15 @@ class FakeStoreService {
     return record;
   }
 
+  async getTargetAlertState(provider, targetService) {
+    return this.targetAlertStates.get(`${provider}:${targetService}`);
+  }
+
+  async saveTargetAlertState(record) {
+    this.targetAlertStates.set(record.alertKey, record);
+    return record;
+  }
+
   async listIncidents() {
     return [...this.incidents.values()];
   }
@@ -64,8 +74,44 @@ class FakeStoreService {
     return this.incidents.get(incidentId);
   }
 
-  async createIncident() {
-    throw new Error("Not implemented for this test suite.");
+  async createIncident(input) {
+    const service = this.services.get(input.primaryService);
+    if (!service) {
+      return undefined;
+    }
+
+    const incidentId = `INC-2026-${String(this.incidents.size + 43).padStart(4, "0")}`;
+    const timestamp = new Date().toISOString();
+    const incident = {
+      incidentId,
+      title: input.title,
+      summary: input.summary,
+      severity: input.severity,
+      primaryService: service.serviceId,
+      ownerTeam: service.ownerTeam,
+      customerImpact: `${service.businessJourney} is degraded and customer errors are increasing.`,
+      businessImpact: `${service.businessJourney} is at risk due to a new signal: ${input.trigger}.`,
+      cloudProviders: [service.cloudProvider],
+      status: "DETECTED",
+      confidenceSummary: "Low confidence: initial signal created and awaiting correlation.",
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      hypotheses: [],
+      evidence: [],
+      proposals: [],
+      timeline: [
+        {
+          eventId: randomUUID(),
+          timestamp,
+          title: "Incident detected",
+          detail: input.trigger,
+          status: "DETECTED"
+        }
+      ],
+      approvals: []
+    };
+    this.incidents.set(incidentId, incident);
+    return incident;
   }
 
   async updateIncident(incident) {
@@ -574,6 +620,56 @@ const managerHeaders = {
     assert.match(gcpTarget.metricAlertSummary, /request error rate/i);
     assert.equal(gcpTarget.breachedMetrics.includes("Request error rate"), true);
     assert.equal(gcpTarget.lastCollectedAt, "2026-07-26T22:10:00.000Z");
+  });
+
+  test("acknowledges a sustained alert and opens an incident from it", async () => {
+    for (const minute of [0, 5, 10]) {
+      await fakeStore.appendMetricSample({
+        serviceId: "payment-routing",
+        metricName: "request_error_rate",
+        unit: "%",
+        value: 2.2,
+        timestamp: `2026-07-26T22:${String(minute).padStart(2, "0")}:00.000Z`
+      });
+    }
+
+    await app.inject({
+      method: "GET",
+      url: "/api/platform/status",
+      headers: managerHeaders
+    });
+
+    const acknowledgeResponse = await app.inject({
+      method: "POST",
+      url: "/api/platform/targets/gcp/payment-routing/acknowledge-alert",
+      headers: managerHeaders
+    });
+    const acknowledgeBody = acknowledgeResponse.json();
+    const acknowledgedTarget = acknowledgeBody.providerTargets.find((target) => target.provider === "gcp");
+
+    assert.equal(acknowledgeResponse.statusCode, 201);
+    assert.equal(acknowledgedTarget.alertAcknowledgedBy, "Incident Manager");
+
+    const openIncidentResponse = await app.inject({
+      method: "POST",
+      url: "/api/platform/targets/gcp/payment-routing/open-incident",
+      headers: managerHeaders
+    });
+    const incidentBody = openIncidentResponse.json();
+
+    assert.equal(openIncidentResponse.statusCode, 201);
+    assert.match(incidentBody.title, /payment-routing sustained breached metric alert/i);
+
+    const statusResponse = await app.inject({
+      method: "GET",
+      url: "/api/platform/status",
+      headers: managerHeaders
+    });
+    const statusBody = statusResponse.json();
+    const gcpTarget = statusBody.providerTargets.find((target) => target.provider === "gcp");
+
+    assert.equal(gcpTarget.alertIncidentId, incidentBody.incidentId);
+    assert.equal(gcpTarget.alertAcknowledgedBy, "Incident Manager");
   });
 
   test("exposes service approval context and metric trends for a target service", async () => {
