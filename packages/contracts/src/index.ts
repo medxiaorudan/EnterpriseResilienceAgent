@@ -24,6 +24,7 @@ export type VerificationOutcome =
   | "ROLLBACK_COMPLETED"
   | "ESCALATED";
 export type MlFramework = "pytorch" | "tensorflow";
+export type LlmProvider = "openai" | "anthropic" | "google" | "azure-openai" | "self-hosted";
 
 export interface TimeRange {
   start: string;
@@ -226,6 +227,26 @@ export interface MlopsCapabilityProfile {
   modelRegistry: string[];
   evaluationModes: string[];
   deploymentStrategies: string[];
+}
+
+export interface LlmopsCapabilityProfile {
+  providers: Array<{
+    provider: LlmProvider;
+    supported: boolean;
+    useCases: string[];
+    notes: string;
+  }>;
+  observability: string[];
+  evaluationModes: string[];
+  safetyControls: string[];
+  governance: string[];
+}
+
+export interface ToolLayerFit {
+  tool: string;
+  category: "telemetry" | "monitoring" | "llm-observability" | "resilience-control-plane";
+  strongestFit: string[];
+  roleInThisProject: string;
 }
 
 export interface MetricQuery {
@@ -662,3 +683,128 @@ export const seedMlopsCapabilityProfile: MlopsCapabilityProfile = {
     "rollback-to-previous-model"
   ]
 };
+
+export const seedLlmopsCapabilityProfile: LlmopsCapabilityProfile = {
+  providers: [
+    {
+      provider: "openai",
+      supported: true,
+      useCases: [
+        "incident summarization",
+        "root-cause hypothesis generation",
+        "remediation recommendation ranking",
+        "evaluation and judging workflows"
+      ],
+      notes: "Preferred for frontier reasoning and structured-output workflows where managed hosted models are acceptable."
+    },
+    {
+      provider: "anthropic",
+      supported: true,
+      useCases: [
+        "policy-aware reasoning",
+        "long-context incident investigation",
+        "explanation generation"
+      ],
+      notes: "Useful when long-context reasoning and cautious recommendation behavior are preferred."
+    },
+    {
+      provider: "google",
+      supported: true,
+      useCases: [
+        "multimodal investigation extensions",
+        "tool-driven analysis",
+        "alternative model routing"
+      ],
+      notes: "Supported as an alternate managed provider for model diversity and routing experiments."
+    },
+    {
+      provider: "azure-openai",
+      supported: true,
+      useCases: [
+        "enterprise-managed OpenAI deployments",
+        "regional governance",
+        "regulated environment hosting"
+      ],
+      notes: "Useful when enterprise network, compliance, or regional hosting requirements favor Azure-managed deployment."
+    },
+    {
+      provider: "self-hosted",
+      supported: true,
+      useCases: [
+        "private inference",
+        "air-gapped environments",
+        "specialized internal models"
+      ],
+      notes: "Reserved for high-control environments where hosted LLM providers are not permitted."
+    }
+  ],
+  observability: [
+    "trace every LLM call",
+    "record prompt version and tool schema version",
+    "track latency, cost, token use, and model version",
+    "capture retrieved documents and tool calls",
+    "store approval and override context"
+  ],
+  evaluationModes: [
+    "offline datasets",
+    "production scoring",
+    "llm-as-a-judge",
+    "deterministic code evaluators",
+    "prompt experiments",
+    "champion-challenger comparison"
+  ],
+  safetyControls: [
+    "prompt-injection detection",
+    "tool misuse prevention",
+    "unsupported-claim monitoring",
+    "structured-output validation",
+    "human approval before production change",
+    "runbook-only execution"
+  ],
+  governance: [
+    "prompt version registry",
+    "model version registry",
+    "approval audit trail",
+    "release tagging",
+    "policy-scoped autonomy levels"
+  ]
+};
+
+export const seedToolLayerFits: ToolLayerFit[] = [
+  {
+    tool: "OpenTelemetry",
+    category: "telemetry",
+    strongestFit: ["AIOps", "MLOps", "LLMOps"],
+    roleInThisProject: "Instrumentation and signal emission for services, agents, APIs, and workers."
+  },
+  {
+    tool: "Prometheus",
+    category: "monitoring",
+    strongestFit: ["AIOps", "MLOps-serving"],
+    roleInThisProject: "Numeric time-series monitoring and alert input for incident detection and recovery verification."
+  },
+  {
+    tool: "Grafana",
+    category: "monitoring",
+    strongestFit: ["AIOps", "MLOps-serving"],
+    roleInThisProject: "Dashboards, anomaly views, and operator-facing observability for infrastructure and business signals."
+  },
+  {
+    tool: "LangSmith",
+    category: "llm-observability",
+    strongestFit: ["LLMOps", "AgentOps"],
+    roleInThisProject: "Tracing, evaluation, dataset testing, and regression monitoring for the LLM and agent layers."
+  },
+  {
+    tool: "Langfuse",
+    category: "llm-observability",
+    strongestFit: ["LLMOps", "AgentOps"],
+    roleInThisProject: "Production LLM observability, prompt experiments, scoring, and model/prompt analytics."
+  },
+  {
+    tool: "Enterprise Resilience Agent",
+    category: "resilience-control-plane",
+    strongestFit: ["AIOps", "Resilience Engineering", "Human-approved automation"],
+    roleInThisProject: "Incident reasoning, approval gating, runbook orchestration, execution control, verification, rollback, and escalation."
+  }
+];

@@ -29,6 +29,7 @@ This repository now contains the first runnable product slice from the engineeri
 - Postgres-backed persistence for incidents, services, approvals, runbooks, and audit events
 - Redis-backed idempotency caching and approval/execution locking
 - MLOps capability profile with explicit PyTorch and TensorFlow support
+- LLMOps capability profile for model providers, prompt/eval governance, and agent safety controls
 - AWS execution contract with allowed-target mapping, scale bounds, rollback requirement, and feature-flagged live ECS mode
 
 ## Intended Commands
@@ -64,3 +65,26 @@ Guardrails enforced before execution:
 - scale bounds must be valid
 
 If `AWS_ECS_LIVE_EXECUTION` is `false`, the adapter stays in deterministic simulation mode.
+
+## Tool Fit By Layer
+
+| Layer | Best-fit tools | Role |
+|---|---|---|
+| Telemetry | OpenTelemetry | Emits traces, metrics, and logs from services, agents, APIs, and workers |
+| Monitoring | Prometheus + Grafana | Alerting, dashboards, anomaly views, and operational visibility |
+| LLM / Agent Observability | LangSmith or Langfuse | Prompt experiments, traces, evals, scoring, cost/latency, and agent debugging |
+| Resilience Control Plane | Enterprise Resilience Agent | Incident reasoning, approval, runbooks, execution control, verification, rollback, escalation |
+
+## MLOps And LLMOps Positioning
+
+- **MLOps** in this project covers traditional model lifecycle concerns such as PyTorch/TensorFlow support, model registry, evaluation, rollout strategy, and rollback.
+- **LLMOps** in this project covers prompt/version governance, provider routing, tool-call tracing, LLM evaluation, safety controls, and production agent observability.
+- Prometheus, Grafana, OpenTelemetry, LangSmith, and Langfuse are complementary systems around this platform, not substitutes for the resilience control plane itself.
+
+## LLMOps API
+
+The API now exposes LLMOps capability metadata:
+
+- `GET /api/llmops/profile`
+- `GET /api/llmops/providers`
+- `GET /api/llmops/tool-layer-fit`
