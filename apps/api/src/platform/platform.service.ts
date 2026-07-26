@@ -11,6 +11,7 @@ import { CloudAdaptersService } from "../cloud-adapters/cloud-adapters.service.j
 import { GcpConfigService } from "../cloud-adapters/gcp-config.service.js";
 import { StoreService } from "../common/store.service.js";
 import { IncidentsService } from "../incidents/incidents.service.js";
+import { AlertRoutingService } from "../services/alert-routing.service.js";
 import { getMetricDefinitions, getThresholdStatus } from "../services/metric-policy.js";
 
 @Injectable()
@@ -20,7 +21,8 @@ export class PlatformService {
     private readonly gcpConfig: GcpConfigService,
     private readonly cloudAdapters: CloudAdaptersService,
     private readonly store: StoreService,
-    private readonly incidentsService: IncidentsService
+    private readonly incidentsService: IncidentsService,
+    private readonly alertRouting: AlertRoutingService
   ) {}
 
   async getStatus(): Promise<PlatformStatusSummary> {
@@ -323,7 +325,11 @@ export class PlatformService {
         (event.summary === "Target alert state changed" ||
           event.summary === "Target alert recovered" ||
           event.summary === "Target alert acknowledged" ||
-          event.summary === "Target alert incident opened")
+          event.summary === "Target alert incident opened" ||
+          event.summary === "Target alert auto-escalated" ||
+          event.summary === "Target alert notification sent" ||
+          event.summary === "Target alert notification skipped" ||
+          event.summary === "Target alert notification failed")
     );
   }
 
@@ -348,6 +354,14 @@ export class PlatformService {
       category: "policy",
       summary: "Target alert acknowledged",
       detail: `${session.displayName} acknowledged the ${alert.state} alert for ${targetService}.`
+    });
+    await this.alertRouting.route({
+      provider,
+      targetService,
+      state: alert.state,
+      summary: `${session.displayName} acknowledged the ${alert.state} alert for ${targetService}.`,
+      incidentId: alert.incidentId,
+      eventType: "acknowledged"
     });
 
     return this.getStatus();
@@ -387,6 +401,14 @@ export class PlatformService {
       category: "incident",
       summary: "Target alert incident opened",
       detail: `${session.displayName} opened ${incident.incidentId} from the ${alert.state} alert on ${targetService}.`
+    });
+    await this.alertRouting.route({
+      provider,
+      targetService,
+      state: alert.state,
+      summary: `${session.displayName} opened ${incident.incidentId} from the ${alert.state} alert on ${targetService}.`,
+      incidentId: incident.incidentId,
+      eventType: "incident-opened"
     });
 
     return incident;

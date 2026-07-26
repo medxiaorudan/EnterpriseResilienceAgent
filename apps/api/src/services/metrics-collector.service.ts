@@ -2,6 +2,8 @@ import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from "@nestjs/commo
 import type { CloudProvider, TargetAlertStateRecord } from "@enterprise-resilience/contracts";
 import { CloudAdaptersService } from "../cloud-adapters/cloud-adapters.service.js";
 import { StoreService } from "../common/store.service.js";
+import { IncidentsService } from "../incidents/incidents.service.js";
+import { AlertRoutingService } from "./alert-routing.service.js";
 import { fallbackMetricValue, getMetricDefinitions, getThresholdStatus } from "./metric-policy.js";
 
 @Injectable()
@@ -12,7 +14,9 @@ export class MetricsCollectorService implements OnModuleInit, OnModuleDestroy {
 
   constructor(
     private readonly store: StoreService,
-    private readonly cloudAdapters: CloudAdaptersService
+    private readonly cloudAdapters: CloudAdaptersService,
+    private readonly incidentsService: IncidentsService,
+    private readonly alertRouting: AlertRoutingService
   ) {}
 
   onModuleInit() {
@@ -115,6 +119,12 @@ export class MetricsCollectorService implements OnModuleInit, OnModuleDestroy {
     const alertKey = `${provider}:${targetService}`;
     const previous = await this.store.getTargetAlertState(provider, targetService);
     const startsNewCycle = (previous?.state ?? "normal") === "normal" && nextState !== "normal";
+    const breachStreakCount =
+      nextState === "breached"
+        ? previous?.state === "breached"
+          ? (previous.breachStreakCount ?? 1) + 1
+          : 1
+        : 0;
     const record: TargetAlertStateRecord = {
       alertKey,
       provider,
@@ -126,6 +136,7 @@ export class MetricsCollectorService implements OnModuleInit, OnModuleDestroy {
       acknowledgedAt: previous?.state === nextState && !startsNewCycle ? previous.acknowledgedAt : undefined,
       acknowledgedBy: previous?.state === nextState && !startsNewCycle ? previous.acknowledgedBy : undefined,
       incidentId: previous?.state === nextState && !startsNewCycle ? previous.incidentId : undefined,
+      breachStreakCount,
       updatedAt: lastCollectedAt
     };
 
@@ -141,6 +152,14 @@ export class MetricsCollectorService implements OnModuleInit, OnModuleDestroy {
         summary: "Target alert state changed",
         detail: `${targetService} moved from ${previous?.state ?? "unknown"} to ${nextState}: ${summary}`
       });
+      await this.alertRouting.route({
+        provider,
+        targetService,
+        state: nextState,
+        summary,
+        incidentId: previous?.incidentId,
+        eventType: "state-changed"
+      });
     }
 
     if ((previous?.state === "warning" || previous?.state === "breached") && nextState === "normal") {
@@ -152,6 +171,53 @@ export class MetricsCollectorService implements OnModuleInit, OnModuleDestroy {
         category: "verification",
         summary: "Target alert recovered",
         detail: `${targetService} returned to normal after ${previous.state}. Recent samples are back within threshold.`
+      });
+      await this.alertRouting.route({
+        provider,
+        targetService,
+        state: "normal",
+        summary: `${targetService} returned to normal after ${previous.state}.`,
+        incidentId: previous?.incidentId,
+        eventType: "recovered"
+      });
+    }
+
+    const escalationThreshold = Number(process.env.ALERT_ESCALATION_BREACH_STREAK ?? "2");
+    if (
+      nextState === "breached" &&
+      breachStreakCount >= escalationThreshold &&
+      !record.acknowledgedAt &&
+      !record.incidentId
+    ) {
+      const incident = await this.incidentsService.create({
+        title: `${targetService} sustained breached metric alert`,
+        primaryService: targetService,
+        severity: "SEV-2",
+        summary: `${targetService} remained in breached state for ${breachStreakCount} collector cycles.`,
+        trigger: summary
+      });
+      const escalatedRecord: TargetAlertStateRecord = {
+        ...record,
+        incidentId: incident.incidentId,
+        updatedAt: new Date().toISOString()
+      };
+      await this.store.saveTargetAlertState(escalatedRecord);
+      await this.store.recordAudit({
+        actor: "metric-collector",
+        provider,
+        targetService,
+        incidentId: incident.incidentId,
+        category: "incident",
+        summary: "Target alert auto-escalated",
+        detail: `${targetService} remained breached for ${breachStreakCount} cycles and was auto-escalated to ${incident.incidentId}.`
+      });
+      await this.alertRouting.route({
+        provider,
+        targetService,
+        state: "breached",
+        summary: `${targetService} auto-escalated after ${breachStreakCount} breached cycles.`,
+        incidentId: incident.incidentId,
+        eventType: "auto-escalated"
       });
     }
   }

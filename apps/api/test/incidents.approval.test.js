@@ -719,6 +719,23 @@ const managerHeaders = {
     assert.match(recoveryEvent.detail, /returned to normal/i);
   });
 
+  test("auto-escalates repeated breached cycles when no operator responds", async () => {
+    await metricsCollector.collectAllTargets();
+    await metricsCollector.collectAllTargets();
+    await metricsCollector.collectAllTargets();
+    await metricsCollector.collectAllTargets();
+
+    const alert = await fakeStore.getTargetAlertState("aws", "checkout-api");
+    const incident = await fakeStore.getIncident(alert.incidentId);
+    const escalationEvent = fakeStore.auditEvents.find((event) => event.summary === "Target alert auto-escalated");
+
+    assert.equal(alert.state, "breached");
+    assert.equal(alert.breachStreakCount >= 2, true);
+    assert.ok(alert.incidentId);
+    assert.match(incident.title, /checkout-api sustained breached metric alert/i);
+    assert.match(escalationEvent.detail, /auto-escalated/i);
+  });
+
   test("exposes service approval context and metric trends for a target service", async () => {
     const incident = await fakeStore.getIncident(incidentId);
     incident.proposals = [

@@ -317,6 +317,7 @@ export interface TargetAlertStateRecord {
   acknowledgedAt?: string;
   acknowledgedBy?: string;
   incidentId?: string;
+  breachStreakCount?: number;
   updatedAt: string;
 }
 
