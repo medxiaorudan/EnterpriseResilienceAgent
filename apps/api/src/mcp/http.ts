@@ -8,6 +8,10 @@ const host = process.env.ERA_MCP_HTTP_HOST ?? "0.0.0.0";
 const basePath = process.env.ERA_MCP_HTTP_PATH ?? "/mcp";
 const allowUnauthenticated = process.env.ERA_MCP_HTTP_ALLOW_UNAUTHENTICATED === "true";
 const bearerToken = process.env.ERA_MCP_HTTP_BEARER_TOKEN;
+const oidcIssuer = process.env.ERA_MCP_OIDC_ISSUER;
+const oidcAudience = process.env.ERA_MCP_OIDC_AUDIENCE;
+const oidcJwksUrl = process.env.ERA_MCP_OIDC_JWKS_URL;
+const oidcJwksJson = process.env.ERA_MCP_OIDC_JWKS_JSON;
 
 async function toRequest(req: IncomingMessage) {
   const chunks: Buffer[] = [];
@@ -62,9 +66,18 @@ createServer(async (req, res) => {
       return;
     }
 
-    const authResult = validateMcpHttpAuth(req.headers.authorization, {
+    const authResult = await validateMcpHttpAuth(req.headers.authorization, {
       expectedToken: bearerToken,
-      allowUnauthenticated
+      allowUnauthenticated,
+      oidc:
+        oidcIssuer && oidcAudience
+          ? {
+              issuer: oidcIssuer,
+              audience: oidcAudience,
+              jwksUrl: oidcJwksUrl,
+              jwksJson: oidcJwksJson
+            }
+          : undefined
     });
     if (!authResult.ok) {
       res.writeHead(authResult.statusCode, {
@@ -95,6 +108,6 @@ createServer(async (req, res) => {
   }
 }).listen(port, host, () => {
   console.log(
-    `Enterprise Resilience Agent MCP HTTP listening on http://${host}:${port}${basePath} (${allowUnauthenticated ? "unauthenticated" : "bearer-protected"})`
+    `Enterprise Resilience Agent MCP HTTP listening on http://${host}:${port}${basePath} (${allowUnauthenticated ? "unauthenticated" : oidcIssuer ? "oidc-protected" : "bearer-protected"})`
   );
 });

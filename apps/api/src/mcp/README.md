@@ -22,11 +22,19 @@ It also includes a streamable HTTP entrypoint for remote MCP clients.
   Example: `/mcp`
 - `ERA_MCP_HTTP_BEARER_TOKEN`
   Example: `change-this-long-random-token`
+- `ERA_MCP_OIDC_ISSUER`
+  Example: `https://login.example.com/realms/platform`
+- `ERA_MCP_OIDC_AUDIENCE`
+  Example: `enterprise-resilience-mcp`
 
 Optional:
 
 - `ERA_MCP_HTTP_ALLOW_UNAUTHENTICATED`
   Example: `false`
+- `ERA_MCP_OIDC_JWKS_URL`
+  Example: `https://login.example.com/realms/platform/protocol/openid-connect/certs`
+- `ERA_MCP_OIDC_JWKS_JSON`
+  Example: `{"keys":[...]}`
 
 If not set, the server defaults to:
 
@@ -39,6 +47,12 @@ If not set, the server defaults to:
 
 For remote HTTP MCP clients, bearer auth is expected by default.
 
+Preferred production setup:
+
+- configure `ERA_MCP_OIDC_ISSUER`
+- configure `ERA_MCP_OIDC_AUDIENCE`
+- configure either `ERA_MCP_OIDC_JWKS_URL` or `ERA_MCP_OIDC_JWKS_JSON`
+
 Example request header:
 
 ```text
@@ -46,3 +60,5 @@ Authorization: Bearer change-this-long-random-token
 ```
 
 Only set `ERA_MCP_HTTP_ALLOW_UNAUTHENTICATED=true` for local testing on a trusted machine.
+
+If OIDC is configured, JWT validation is used before the static bearer token fallback.
