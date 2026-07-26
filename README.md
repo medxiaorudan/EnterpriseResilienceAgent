@@ -85,13 +85,11 @@ The current product slice supports these operation groups.
 
 - Web dashboard
 - REST API
+- MCP server
 
 ### User access modes not yet packaged in this repo
 
-- MCP server
 - Downloadable desktop tool
-
-If you want either of those, the next product step is to wrap the API as an MCP server or package the frontend as a downloadable application. They are not included in the current codebase yet.
 
 ## How Non-Technical Users Should Use It
 
@@ -141,9 +139,15 @@ Common API entry points:
 
 ### Option 3. Use through an MCP server
 
-This is not included yet in the repository.
+This is included in the repository as a stdio MCP server.
 
-To support MCP access, a thin MCP wrapper would need to be added in front of the API.
+Typical usage:
+
+1. Start the API.
+2. Run the MCP server with `npm run start:mcp`.
+3. Point your MCP host to the example config in [.vscode/mcp.json.example](/Users/rudan/Documents/hobby_projects/EnterpriseResilienceAgent/.vscode/mcp.json.example).
+
+The MCP server exposes incident, approval, runbook, audit, service, session, and platform-status tools.
 
 ### Option 4. Use as a downloadable tool
 
@@ -195,6 +199,14 @@ After that, open:
 ## Deployment Guides
 
 - Ubuntu server deployment: [DEPLOYMENT_UBUNTU.md](/Users/rudan/Documents/hobby_projects/EnterpriseResilienceAgent/DEPLOYMENT_UBUNTU.md)
+
+## MCP Quick Start
+
+1. Start the API with `npm run dev:api`
+2. Start the MCP server with `npm run start:mcp`
+3. Configure your MCP host using [.vscode/mcp.json.example](/Users/rudan/Documents/hobby_projects/EnterpriseResilienceAgent/.vscode/mcp.json.example)
+4. Use the MCP tools:
+   `get_platform_status`, `list_incidents`, `get_incident`, `approve_incident`, `reject_incident`, `escalate_incident`, `list_runbooks`, `simulate_runbook`, `list_audit_events`, `list_services`
 
 ## Project Structure
 

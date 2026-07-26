@@ -1,0 +1,19 @@
+{
+  "servers": {
+    "enterprise-resilience-agent": {
+      "type": "stdio",
+      "command": "npm",
+      "args": [
+        "run",
+        "start",
+        "--workspace",
+        "@enterprise-resilience/mcp"
+      ],
+      "env": {
+        "ERA_API_URL": "http://127.0.0.1:3000/api",
+        "ERA_MCP_USER_ID": "manager.demo",
+        "ERA_MCP_ROLE": "incident-manager"
+      }
+    }
+  }
+}
