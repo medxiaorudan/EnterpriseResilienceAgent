@@ -44,7 +44,7 @@ export function AppLayout() {
       <aside className="sidebar">
         <div>
           <p className="eyebrow">Enterprise Resilience Agent</p>
-          <h1 className="sidebar-title">AWS-first multicloud control plane</h1>
+          <h1 className="sidebar-title">Multicloud control plane</h1>
         </div>
         <div className="session-panel">
           <span className="eyebrow">Current access</span>

@@ -8,7 +8,7 @@
 
 <div align="center">
 
-**AWS-first** · **Multicloud-ready** · **Human-controlled** · **Policy-governed** · **Auditable**
+**Multicloud** · **Human-controlled** · **Policy-governed** · **Auditable**
 
 </div>
 
