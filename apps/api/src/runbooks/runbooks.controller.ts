@@ -1,4 +1,5 @@
 import { Body, Controller, Get, Param, Post } from "@nestjs/common";
+import { Roles } from "../auth/auth.decorators.js";
 import { RunbooksService } from "./runbooks.service.js";
 
 @Controller()
@@ -16,6 +17,7 @@ export class RunbooksController {
   }
 
   @Post("runbooks/:runbookId/simulate")
+  @Roles("engineer", "incident-manager")
   simulate(
     @Param("runbookId") runbookId: string,
     @Body() body: { dryRun?: boolean }
@@ -24,6 +26,7 @@ export class RunbooksController {
   }
 
   @Post("runbooks/:runbookId/execute")
+  @Roles("engineer", "incident-manager")
   execute(
     @Param("runbookId") runbookId: string,
     @Body() body: { incidentId?: string }
@@ -32,6 +35,7 @@ export class RunbooksController {
   }
 
   @Get("executions/:executionId")
+  @Roles("engineer", "incident-manager", "auditor")
   getExecution(@Param("executionId") executionId: string) {
     return {
       executionId,
@@ -41,6 +45,7 @@ export class RunbooksController {
   }
 
   @Post("executions/:executionId/cancel")
+  @Roles("engineer", "incident-manager")
   cancelExecution(@Param("executionId") executionId: string) {
     return {
       executionId,
@@ -49,6 +54,7 @@ export class RunbooksController {
   }
 
   @Post("executions/:executionId/rollback")
+  @Roles("engineer", "incident-manager")
   rollbackExecution(@Param("executionId") executionId: string) {
     return {
       executionId,

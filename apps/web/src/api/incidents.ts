@@ -22,27 +22,21 @@ export function getIncidentTimeline(incidentId: string) {
 export function approveIncident(incidentId: string) {
   return apiRequest<IncidentRecord>(`/incidents/${incidentId}/approve`, {
     method: "POST",
-    body: JSON.stringify({
-      actor: "business-approver"
-    })
+    body: JSON.stringify({})
   });
 }
 
 export function rejectIncident(incidentId: string) {
   return apiRequest<IncidentRecord>(`/incidents/${incidentId}/reject`, {
     method: "POST",
-    body: JSON.stringify({
-      actor: "business-approver"
-    })
+    body: JSON.stringify({})
   });
 }
 
 export function escalateIncident(incidentId: string) {
   return apiRequest<IncidentRecord>(`/incidents/${incidentId}/escalate`, {
     method: "POST",
-    body: JSON.stringify({
-      actor: "incident-manager"
-    })
+    body: JSON.stringify({})
   });
 }
 

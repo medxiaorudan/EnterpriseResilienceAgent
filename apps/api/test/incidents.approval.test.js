@@ -178,7 +178,11 @@ describe("incident approval API", () => {
   let app;
   let fakeStore;
   let fakeRedis;
-  const incidentId = "INC-2026-0042";
+const incidentId = "INC-2026-0042";
+const managerHeaders = {
+  "x-era-user": "manager.demo",
+  "x-era-role": "incident-manager"
+};
 
   beforeEach(async () => {
     fakeStore = new FakeStoreService();
@@ -209,8 +213,8 @@ describe("incident approval API", () => {
     const first = await app.inject({
       method: "POST",
       url: `/api/incidents/${incidentId}/approve`,
+      headers: managerHeaders,
       payload: {
-        actor: "business-approver",
         idempotencyKey
       }
     });
@@ -228,8 +232,8 @@ describe("incident approval API", () => {
     const second = await app.inject({
       method: "POST",
       url: `/api/incidents/${incidentId}/approve`,
+      headers: managerHeaders,
       payload: {
-        actor: "business-approver",
         idempotencyKey
       }
     });
@@ -246,8 +250,8 @@ describe("incident approval API", () => {
     const response = await app.inject({
       method: "POST",
       url: `/api/incidents/${incidentId}/approve`,
+      headers: managerHeaders,
       payload: {
-        actor: "business-approver",
         idempotencyKey: "lock-conflict"
       }
     });
@@ -263,8 +267,8 @@ describe("incident approval API", () => {
     const response = await app.inject({
       method: "POST",
       url: `/api/incidents/${incidentId}/approve`,
+      headers: managerHeaders,
       payload: {
-        actor: "business-approver",
         idempotencyKey: "redis-down"
       }
     });
@@ -278,8 +282,8 @@ describe("incident approval API", () => {
     const response = await app.inject({
       method: "POST",
       url: `/api/incidents/${incidentId}/approve`,
+      headers: managerHeaders,
       payload: {
-        actor: "business-approver",
         idempotencyKey: "dry-run-1",
         dryRun: true
       }
@@ -290,5 +294,36 @@ describe("incident approval API", () => {
     assert.equal(body.status, "AWAITING_APPROVAL");
     assert.equal(body.latestVerification.outcome, "NO_CHANGE");
     assert.match(body.latestVerification.summary, /Dry-run completed/i);
+  });
+
+  test("blocks approval when the current role is read-only", async () => {
+    const response = await app.inject({
+      method: "POST",
+      url: `/api/incidents/${incidentId}/approve`,
+      headers: {
+        "x-era-user": "viewer.demo",
+        "x-era-role": "viewer"
+      },
+      payload: {
+        idempotencyKey: "viewer-block"
+      }
+    });
+    const body = response.json();
+
+    assert.equal(response.statusCode, 403);
+    assert.match(body.message, /required roles/i);
+  });
+
+  test("returns the default demo session when auth headers are absent", async () => {
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/auth/session"
+    });
+    const body = response.json();
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(body.userId, "manager.demo");
+    assert.equal(body.role, "incident-manager");
+    assert.equal(body.source, "demo-default");
   });
 });

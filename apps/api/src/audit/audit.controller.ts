@@ -1,7 +1,9 @@
 import { Controller, Get, Param } from "@nestjs/common";
+import { Roles } from "../auth/auth.decorators.js";
 import { AuditService } from "./audit.service.js";
 
 @Controller("audit")
+@Roles("auditor", "engineer", "incident-manager")
 export class AuditController {
   constructor(private readonly auditService: AuditService) {}
 

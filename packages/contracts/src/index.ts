@@ -25,6 +25,7 @@ export type VerificationOutcome =
   | "ESCALATED";
 export type MlFramework = "pytorch" | "tensorflow";
 export type LlmProvider = "openai" | "anthropic" | "google" | "azure-openai" | "self-hosted";
+export type UserRole = "viewer" | "business-approver" | "incident-manager" | "engineer" | "auditor" | "admin";
 
 export interface TimeRange {
   start: string;
@@ -273,6 +274,19 @@ export interface PlatformStatusSummary {
   components: PlatformStatusComponent[];
   accessLinks: PlatformAccessLink[];
   nextSteps: string[];
+}
+
+export interface AuthSession {
+  userId: string;
+  displayName: string;
+  role: UserRole;
+  source: "header" | "demo-default";
+}
+
+export interface DemoUserOption {
+  userId: string;
+  displayName: string;
+  role: UserRole;
 }
 
 export interface MetricQuery {

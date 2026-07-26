@@ -58,6 +58,30 @@ button {
   margin-top: 32px;
 }
 
+.session-panel {
+  display: grid;
+  gap: 8px;
+  margin-top: 28px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: rgba(255, 253, 247, 0.72);
+}
+
+.field-label {
+  font-size: 0.82rem;
+  color: rgba(24, 34, 24, 0.72);
+}
+
+.session-select {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #fffdf7;
+  color: #182218;
+}
+
 .nav-link {
   padding: 12px 14px;
   border-radius: 14px;
@@ -244,6 +268,10 @@ button {
   padding: 14px;
   border-radius: 16px;
   background: rgba(15, 118, 110, 0.08);
+}
+
+.verification-box-warning {
+  background: rgba(180, 83, 9, 0.1);
 }
 
 @media (max-width: 1080px) {

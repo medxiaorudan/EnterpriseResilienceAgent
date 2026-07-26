@@ -54,6 +54,8 @@ export function IncidentDetailPage() {
 
   const incident = incidentQuery.data;
   const primaryProposal = useMemo(() => incident?.proposals[0], [incident]);
+  const mutationError =
+    approveMutation.error?.message ?? rejectMutation.error?.message ?? escalateMutation.error?.message;
 
   if (!incident) {
     return <div className="page-grid">Loading incident...</div>;
@@ -139,6 +141,12 @@ export function IncidentDetailPage() {
             Escalate
           </button>
         </div>
+        {mutationError ? (
+          <div className="verification-box verification-box-warning">
+            <strong>Action blocked</strong>
+            <p>{mutationError}</p>
+          </div>
+        ) : null}
         {incident.latestVerification ? (
           <div className="verification-box">
             <strong>{incident.latestVerification.outcome}</strong>

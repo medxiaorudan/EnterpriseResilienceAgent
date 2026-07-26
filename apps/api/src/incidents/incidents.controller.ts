@@ -1,5 +1,7 @@
 import { Body, Controller, Get, Param, Post } from "@nestjs/common";
 import type { CreateIncidentInput } from "@enterprise-resilience/contracts";
+import { CurrentSession, Roles } from "../auth/auth.decorators.js";
+import type { AuthSession } from "@enterprise-resilience/contracts";
 import { IncidentsService } from "./incidents.service.js";
 
 @Controller("incidents")
@@ -12,6 +14,7 @@ export class IncidentsController {
   }
 
   @Post()
+  @Roles("engineer", "incident-manager")
   create(@Body() body: CreateIncidentInput) {
     return this.incidentsService.create(body);
   }
@@ -42,13 +45,15 @@ export class IncidentsController {
   }
 
   @Post(":incidentId/approve")
+  @Roles("business-approver", "incident-manager")
   approve(
     @Param("incidentId") incidentId: string,
-    @Body() body: { actor?: string; comment?: string; idempotencyKey?: string; dryRun?: boolean }
+    @Body() body: { actor?: string; comment?: string; idempotencyKey?: string; dryRun?: boolean },
+    @CurrentSession() session: AuthSession
   ) {
     return this.incidentsService.approve(
       incidentId,
-      body.actor ?? "service-owner",
+      body.actor ?? session.displayName,
       body.comment,
       body.idempotencyKey,
       body.dryRun
@@ -56,19 +61,23 @@ export class IncidentsController {
   }
 
   @Post(":incidentId/reject")
+  @Roles("business-approver", "incident-manager")
   reject(
     @Param("incidentId") incidentId: string,
-    @Body() body: { actor?: string; comment?: string }
+    @Body() body: { actor?: string; comment?: string },
+    @CurrentSession() session: AuthSession
   ) {
-    return this.incidentsService.reject(incidentId, body.actor ?? "service-owner", body.comment);
+    return this.incidentsService.reject(incidentId, body.actor ?? session.displayName, body.comment);
   }
 
   @Post(":incidentId/escalate")
+  @Roles("incident-manager")
   escalate(
     @Param("incidentId") incidentId: string,
-    @Body() body: { actor?: string; comment?: string }
+    @Body() body: { actor?: string; comment?: string },
+    @CurrentSession() session: AuthSession
   ) {
-    return this.incidentsService.escalate(incidentId, body.actor ?? "incident-manager", body.comment);
+    return this.incidentsService.escalate(incidentId, body.actor ?? session.displayName, body.comment);
   }
 
   @Post(":incidentId/cancel")
