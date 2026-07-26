@@ -1,40 +1,177 @@
 # Enterprise Resilience Agent
 
-A multicloud resilience platform that helps enterprise systems detect failures, explain impact, propose safe remediation, and recover through audited, policy-controlled runbooks.
-<img width="1693" height="929" alt="call_p64zxYJxIxlYuvFKdrM6HGVA" src="https://github.com/user-attachments/assets/c1dd3aec-a5bf-4640-93fb-37ed1cfe2341" />
+Enterprise Resilience Agent helps teams understand service problems, choose the safest recovery action, get the right approval, and keep a clear record of what happened.
 
-## Workspace
+It is designed to be easy to explain to non-technical users:
 
-```text
-apps/
-  api/      NestJS API with Postgres persistence, seeded incident data, and SSE
-  web/      React + Vite frontend for overview, incidents, approvals, runbooks, and audit
-packages/
-  contracts/ Shared TypeScript contracts and seeded demo data
-  ui/        Reusable React UI primitives
-runbooks/    Sample AWS and GCP registered runbooks
-policies/    Sample OPA policies for approval, cost, security, blast radius, and cloud scope
-docs/        User-facing documentation
-```
+- something is going wrong
+- the system explains the impact in plain language
+- it recommends the safest next step
+- a person approves or escalates
+- the platform records the result
 
-## First Slice
+![System overview](https://github.com/user-attachments/assets/c1dd3aec-a5bf-4640-93fb-37ed1cfe2341)
 
-This repository now contains the first runnable product slice from the engineering plan:
+## What This Project Does
 
-- Shared incident, service, runbook, approval, execution, audit, and SSE event contracts
-- A NestJS API structure aligned with the planned module boundaries
-- A React dashboard with incident list/detail flows and live event streaming
-- Seed data for an AWS checkout service with a GCP dependency
-- Registered AWS and GCP runbook examples and policy stubs
-- Postgres-backed persistence for incidents, services, approvals, runbooks, and audit events
-- Redis-backed idempotency caching and approval/execution locking
-- MLOps capability profile with explicit PyTorch and TensorFlow support
-- LLMOps capability profile for model providers, prompt/eval governance, and agent safety controls
-- AWS execution contract with allowed-target mapping, scale bounds, rollback requirement, and feature-flagged live ECS mode
+The project acts as a resilience control center for service incidents.
 
-## Intended Commands
+- It watches business-critical services
+- It groups related technical signals into one incident
+- It explains customer and business impact
+- It proposes approved recovery actions
+- It keeps people in control of important changes
+- It verifies whether the recovery actually helped
+- It stores an audit trail for later review
 
-After installing dependencies:
+## Supported Operations
+
+The current product slice supports these operation groups.
+
+### 1. Incident Operations
+
+- Detect and create incidents
+- View incident details
+- View incident timelines
+- Review evidence and likely causes
+- See recommended remediation actions
+
+### 2. Approval Operations
+
+- Approve a proposed action
+- Reject a proposed action
+- Escalate an incident to the next owner
+- Keep human approval in the loop for sensitive changes
+
+### 3. Runbook Operations
+
+- View registered runbooks
+- Simulate selected runbooks
+- Execute approved low-risk runbooks
+- Support dry-run validation before live execution
+
+### 4. Recovery Verification Operations
+
+- Check whether the service recovered
+- Mark incidents as resolved, unchanged, or escalated
+- Record execution and verification results
+
+### 5. Audit Operations
+
+- View audit records
+- Review who approved what
+- Review execution and verification history
+
+### 6. Platform Operations
+
+- View dashboard health and access entry points
+- Check database, Redis, and adapter readiness
+- Run in safe simulation mode by default
+
+## Supported Environment Scope
+
+### Cloud support
+
+- AWS-first
+- Multicloud-ready structure
+- Seeded AWS and GCP examples
+
+### Data and control services
+
+- Postgres for persistent records
+- Redis for idempotency and execution locking
+
+### User access modes available today
+
+- Web dashboard
+- REST API
+
+### User access modes not yet packaged in this repo
+
+- MCP server
+- Downloadable desktop tool
+
+If you want either of those, the next product step is to wrap the API as an MCP server or package the frontend as a downloadable application. They are not included in the current codebase yet.
+
+## How Non-Technical Users Should Use It
+
+Start with the web dashboard.
+
+### Main pages
+
+- `/overview`
+  Best for business users who want the big picture
+- `/approvals`
+  Best for people who need to approve, reject, or escalate actions
+- `/audit`
+  Best for review, governance, and history
+- `/platform`
+  Best for checking whether the system is fully connected and ready
+
+### Normal workflow
+
+1. Open the overview page.
+2. Select the incident that needs attention.
+3. Read the business impact and recommended action.
+4. Approve, reject, or escalate.
+5. Review the outcome and audit trail.
+
+For a full business-facing guide, read [docs/user-guide.md](/Users/rudan/Documents/hobby_projects/EnterpriseResilienceAgent/docs/user-guide.md).
+
+## How To Configure And Use The Agent
+
+### Option 1. Use the dashboard
+
+This is the easiest and recommended way for most users.
+
+1. Deploy the project.
+2. Open the dashboard in a browser.
+3. Use the pages listed above.
+
+### Option 2. Use the API
+
+This is best for engineering teams and internal integrations.
+
+Common API entry points:
+
+- `GET /api/platform/status`
+- `GET /api/incidents`
+- `GET /api/runbooks`
+- `GET /api/audit/events`
+
+### Option 3. Use through an MCP server
+
+This is not included yet in the repository.
+
+To support MCP access, a thin MCP wrapper would need to be added in front of the API.
+
+### Option 4. Use as a downloadable tool
+
+This is not included yet in the repository.
+
+Today, the practical way to use the project is to deploy it as a web application and API.
+
+## Quick Configuration
+
+The project needs these main settings:
+
+- `DATABASE_URL`
+- `REDIS_URL`
+- `APP_BASE_URL`
+- `API_PUBLIC_URL`
+- `AWS_ECS_LIVE_EXECUTION`
+
+Starter values are available in [.env.example](/Users/rudan/Documents/hobby_projects/EnterpriseResilienceAgent/.env.example).
+
+Important:
+
+- Keep `AWS_ECS_LIVE_EXECUTION=false` until you are ready for bounded live actions
+- Use Postgres and Redis before production use
+- Set public URLs correctly so the dashboard and API links work as expected
+
+## How To Run It
+
+### Local development
 
 ```bash
 docker compose up -d postgres
@@ -44,73 +181,32 @@ npm run dev:api
 npm run dev:web
 ```
 
-The API reads Postgres and Redis connection settings from `.env`/environment variables. A starter configuration is in [.env.example](/Users/rudan/Documents/hobby_projects/EnterpriseResilienceAgent/.env.example).
-
-## Dashboard And Access
-
-- Non-technical users start in the web dashboard at `/overview`
-- Deployment and runtime connection status is visible at `/platform`
-- Approvers use `/approvals`
-- Auditors use `/audit`
-- Integrations use `GET /api/platform/status` plus the incident and runbook APIs
-
-## Container Deployment
-
-For a production-style local deployment:
+### Production-style container run
 
 ```bash
-docker compose -f docker-compose.prod.yml up --build
+docker compose -f docker-compose.prod.yml --env-file .env up --build -d
 ```
 
-Then open `http://localhost:8080`. The web container proxies `/api` to the API container, so the dashboard and API work behind one URL.
+After that, open:
 
-Before deploying to a real environment, set:
+- `http://localhost:8080/overview`
+- `http://localhost:8080/platform`
 
-- `APP_BASE_URL` to the public dashboard URL
-- `API_PUBLIC_URL` to the public API URL
-- `DATABASE_URL` and `REDIS_URL` to managed services
-- `AWS_ECS_ALLOWED_TARGETS` and `AWS_EXECUTION_ROLE_ARN` only after guardrails are validated
+## Deployment Guides
 
-## AWS Execution Contract
+- Ubuntu server deployment: [DEPLOYMENT_UBUNTU.md](/Users/rudan/Documents/hobby_projects/EnterpriseResilienceAgent/DEPLOYMENT_UBUNTU.md)
 
-Real ECS execution is disabled by default. To enable it, set:
+## Project Structure
 
-```bash
-AWS_ECS_LIVE_EXECUTION=true
-AWS_EXECUTION_ROLE_ARN=...
-AWS_ECS_ALLOWED_TARGETS='[{"serviceId":"checkout-api","clusterArn":"...","ecsServiceName":"checkout-api","region":"eu-west-1","minDesiredCount":2,"maxDesiredCount":8,"scaleStep":2,"rollbackRunbookId":"aws-ecs-restore-service-count","environments":["production"]}]'
+```text
+apps/
+  api/      Backend API
+  web/      Browser dashboard
+packages/
+  contracts/ Shared data contracts and seeded demo data
+  ui/        Reusable UI components
+runbooks/    Registered recovery procedures
+policies/    Policy stubs for approval, cost, security, and scope
+docs/
+  user-guide.md
 ```
-
-Guardrails enforced before execution:
-
-- service must appear in `AWS_ECS_ALLOWED_TARGETS`
-- environment must be explicitly allowed
-- runbook must be `aws-ecs-scale-service`
-- rollback runbook must be present
-- scale bounds must be valid
-
-If `AWS_ECS_LIVE_EXECUTION` is `false`, the adapter stays in deterministic simulation mode.
-
-## Tool Fit By Layer
-
-| Layer | Best-fit tools | Role |
-|---|---|---|
-| Telemetry | OpenTelemetry | Emits traces, metrics, and logs from services, agents, APIs, and workers |
-| Monitoring | Prometheus + Grafana | Alerting, dashboards, anomaly views, and operational visibility |
-| LLM / Agent Observability | LangSmith or Langfuse | Prompt experiments, traces, evals, scoring, cost/latency, and agent debugging |
-| Resilience Control Plane | Enterprise Resilience Agent | Incident reasoning, approval, runbooks, execution control, verification, rollback, escalation |
-
-## MLOps And LLMOps Positioning
-
-- **MLOps** in this project covers traditional model lifecycle concerns such as PyTorch/TensorFlow support, model registry, evaluation, rollout strategy, and rollback.
-- **LLMOps** in this project covers prompt/version governance, provider routing, tool-call tracing, LLM evaluation, safety controls, and production agent observability.
-- Prometheus, Grafana, OpenTelemetry, LangSmith, and Langfuse are complementary systems around this platform, not substitutes for the resilience control plane itself.
-
-## LLMOps API
-
-The API now exposes LLMOps capability metadata:
-
-- `GET /api/llmops/profile`
-- `GET /api/llmops/providers`
-- `GET /api/llmops/tool-layer-fit`
-- `GET /api/platform/status`
