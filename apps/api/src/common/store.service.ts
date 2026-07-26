@@ -252,6 +252,15 @@ export class StoreService implements OnModuleInit {
     return result.rows.map((row) => row.payload);
   }
 
+  async listAuditEventsByProvider(provider: AuditEvent["provider"]) {
+    await this.ensureInitialized();
+    const result = await this.postgres.query<JsonRow<AuditEvent>>(
+      "select payload from audit_events where payload->>'provider' = $1 order by created_at desc",
+      [provider]
+    );
+    return result.rows.map((row) => row.payload);
+  }
+
   async listAuditEventsForIncident(incidentId: string) {
     await this.ensureInitialized();
     const result = await this.postgres.query<JsonRow<AuditEvent>>(

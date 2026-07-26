@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
+import type { AuthSession } from "@enterprise-resilience/contracts";
 import { CloudAdaptersService } from "../cloud-adapters/cloud-adapters.service.js";
 import { StoreService } from "../common/store.service.js";
 
@@ -21,15 +22,28 @@ export class RunbooksService {
     return runbook;
   }
 
-  async simulate(runbookId: string, dryRun = false) {
+  async simulate(runbookId: string, actor: AuthSession, dryRun = false, targetService?: string) {
     const runbook = await this.getOne(runbookId);
     const adapter = this.cloudAdapters.getAdapter(runbook.cloudProvider);
-    return adapter.simulateRunbook({
+    const target = targetService ?? runbook.approvedTargets[0] ?? "unknown-target";
+    const simulation = await adapter.simulateRunbook({
       runbookId,
-      targetService: runbook.approvedTargets[0] ?? "unknown-target",
+      targetService: target,
       environment: "production",
       dryRun
     });
+
+    await this.store.recordAudit({
+      actor: actor.userId,
+      category: "execution",
+      provider: runbook.cloudProvider,
+      targetService: target,
+      runbookId,
+      summary: `Runbook simulation ${simulation.status}`,
+      detail: simulation.summary
+    });
+
+    return simulation;
   }
 
   async execute(runbookId: string, incidentId?: string) {

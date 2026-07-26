@@ -48,6 +48,17 @@ export function listRunbooks() {
   return apiRequest<RegisteredRunbook[]>("/runbooks");
 }
 
-export function listAuditEvents() {
-  return apiRequest<AuditEvent[]>("/audit/events");
+export function simulateRunbook(runbookId: string, targetService?: string) {
+  return apiRequest(`/runbooks/${runbookId}/simulate`, {
+    method: "POST",
+    body: JSON.stringify({
+      dryRun: true,
+      targetService
+    })
+  });
+}
+
+export function listAuditEvents(provider?: "aws" | "gcp") {
+  const suffix = provider ? `?provider=${provider}` : "";
+  return apiRequest<AuditEvent[]>(`/audit/events${suffix}`);
 }

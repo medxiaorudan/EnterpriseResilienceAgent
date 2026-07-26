@@ -322,8 +322,25 @@ button {
   background: rgba(15, 118, 110, 0.08);
 }
 
+.simulation-box {
+  padding: 12px;
+  border-radius: 14px;
+  background: rgba(22, 101, 52, 0.08);
+}
+
 .verification-box-warning {
   background: rgba(180, 83, 9, 0.1);
+}
+
+.filter-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.audit-filter {
+  max-width: 220px;
 }
 
 @media (max-width: 1080px) {
@@ -338,5 +355,10 @@ button {
   .sidebar {
     border-right: none;
     border-bottom: 1px solid var(--border);
+  }
+
+  .filter-row {
+    align-items: stretch;
+    flex-direction: column;
   }
 }

@@ -154,6 +154,9 @@ export interface AuditEvent {
   auditId: string;
   incidentId?: string;
   executionId?: string;
+  provider?: CloudProvider;
+  targetService?: string;
+  runbookId?: string;
   timestamp: string;
   actor: string;
   category: "incident" | "approval" | "policy" | "execution" | "verification";
@@ -273,6 +276,12 @@ export interface PlatformProviderTarget {
   summary: string;
   region?: string;
   runbookId?: string;
+  latestSimulation?: {
+    status: "passed" | "failed";
+    summary: string;
+    timestamp: string;
+    actor: string;
+  };
 }
 
 export interface PlatformStatusSummary {
@@ -683,6 +692,9 @@ export const seedAuditEvents: AuditEvent[] = [
   {
     auditId: "audit-1",
     incidentId: "INC-2026-0042",
+    provider: "aws",
+    targetService: "checkout-api",
+    runbookId: "aws-ecs-scale-service",
     timestamp: "2026-07-25T09:22:00.000Z",
     actor: "policy-engine",
     category: "policy",

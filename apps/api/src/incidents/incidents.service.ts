@@ -169,6 +169,9 @@ export class IncidentsService {
         incidentId,
         executionId,
         actor,
+        provider: proposal?.cloudProvider,
+        targetService: proposal?.targetService ?? incident.primaryService,
+        runbookId: proposal?.runbookId,
         category: "approval",
         summary: "Incident action approved",
         detail: comment ?? "Approved from incident workspace."
@@ -228,6 +231,9 @@ export class IncidentsService {
         incidentId,
         executionId,
         actor: "verification-service",
+        provider: proposal?.cloudProvider,
+        targetService: proposal?.targetService ?? incident.primaryService,
+        runbookId: proposal?.runbookId,
         category: "verification",
         summary: "Recovery verified",
         detail: verification.summary
@@ -243,6 +249,8 @@ export class IncidentsService {
   }
 
   async reject(incidentId: string, actor: string, comment?: string) {
+    const incident = await this.getOne(incidentId);
+    const proposal = incident.proposals[0];
     await this.store.addApproval(incidentId, {
       actor,
       decision: "rejected",
@@ -251,6 +259,9 @@ export class IncidentsService {
     await this.store.recordAudit({
       incidentId,
       actor,
+      provider: proposal?.cloudProvider,
+      targetService: proposal?.targetService ?? incident.primaryService,
+      runbookId: proposal?.runbookId,
       category: "approval",
       summary: "Incident action rejected",
       detail: comment ?? "Action rejected."
@@ -260,6 +271,8 @@ export class IncidentsService {
   }
 
   async escalate(incidentId: string, actor: string, comment?: string) {
+    const incident = await this.getOne(incidentId);
+    const proposal = incident.proposals[0];
     await this.store.addApproval(incidentId, {
       actor,
       decision: "escalated",
@@ -268,6 +281,9 @@ export class IncidentsService {
     await this.store.recordAudit({
       incidentId,
       actor,
+      provider: proposal?.cloudProvider,
+      targetService: proposal?.targetService ?? incident.primaryService,
+      runbookId: proposal?.runbookId,
       category: "approval",
       summary: "Incident escalated",
       detail: comment ?? "Escalated for manual handling."

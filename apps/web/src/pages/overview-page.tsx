@@ -115,6 +115,17 @@ export function OverviewPage() {
             </div>
             <strong>{gcpSimulationLane.targetService}</strong>
             <p>{gcpSimulationLane.summary}</p>
+            {gcpSimulationLane.latestSimulation ? (
+              <div className="simulation-box">
+                <p>{gcpSimulationLane.latestSimulation.summary}</p>
+                <p className="muted">
+                  Last dry-run by {gcpSimulationLane.latestSimulation.actor} on{" "}
+                  {new Date(gcpSimulationLane.latestSimulation.timestamp).toLocaleString()}
+                </p>
+              </div>
+            ) : (
+              <p className="muted">No GCP dry-run has been recorded yet.</p>
+            )}
             <p className="muted">
               Runbook: {gcpSimulationLane.runbookId} · Region: {gcpSimulationLane.region}
             </p>

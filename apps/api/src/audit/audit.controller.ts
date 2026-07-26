@@ -1,4 +1,5 @@
-import { Controller, Get, Param } from "@nestjs/common";
+import { Controller, Get, Param, Query } from "@nestjs/common";
+import type { CloudProvider } from "@enterprise-resilience/contracts";
 import { Roles } from "../auth/auth.decorators.js";
 import { AuditService } from "./audit.service.js";
 
@@ -8,8 +9,8 @@ export class AuditController {
   constructor(private readonly auditService: AuditService) {}
 
   @Get("events")
-  listEvents() {
-    return this.auditService.listEvents();
+  listEvents(@Query("provider") provider?: CloudProvider) {
+    return this.auditService.listEvents(provider);
   }
 
   @Get("incidents/:incidentId")

@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Param, Post } from "@nestjs/common";
-import { Roles } from "../auth/auth.decorators.js";
+import { CurrentSession, Roles } from "../auth/auth.decorators.js";
+import type { AuthSession } from "@enterprise-resilience/contracts";
 import { RunbooksService } from "./runbooks.service.js";
 
 @Controller()
@@ -20,9 +21,10 @@ export class RunbooksController {
   @Roles("engineer", "incident-manager")
   simulate(
     @Param("runbookId") runbookId: string,
-    @Body() body: { dryRun?: boolean }
+    @CurrentSession() session: AuthSession,
+    @Body() body: { dryRun?: boolean; targetService?: string }
   ) {
-    return this.runbooksService.simulate(runbookId, body?.dryRun);
+    return this.runbooksService.simulate(runbookId, session, body?.dryRun, body?.targetService);
   }
 
   @Post("runbooks/:runbookId/execute")

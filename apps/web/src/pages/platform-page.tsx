@@ -1,5 +1,6 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Badge, Card, Stat } from "@enterprise-resilience/ui";
+import { simulateRunbook } from "@/api/incidents.js";
 import { getPlatformStatus } from "@/api/platform.js";
 
 function componentTone(status: "ready" | "configuration-needed" | "disabled") {
@@ -15,9 +16,18 @@ function componentTone(status: "ready" | "configuration-needed" | "disabled") {
 }
 
 export function PlatformPage() {
+  const queryClient = useQueryClient();
   const platformQuery = useQuery({
     queryKey: ["platform-status"],
     queryFn: getPlatformStatus
+  });
+  const simulateMutation = useMutation({
+    mutationFn: ({ runbookId, targetService }: { runbookId: string; targetService: string }) =>
+      simulateRunbook(runbookId, targetService),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["platform-status"] });
+      await queryClient.invalidateQueries({ queryKey: ["audit-events"] });
+    }
   });
 
   const platform = platformQuery.data;
@@ -116,6 +126,35 @@ export function PlatformPage() {
                       <p className="muted">
                         {target.environment} · {target.region ?? "managed region"} · {target.runbookId ?? "registered runbook"}
                       </p>
+                      {target.latestSimulation ? (
+                        <div className="simulation-box">
+                          <div className="provider-chip-row">
+                            <span className="provider-chip">
+                              last dry-run {target.latestSimulation.status}
+                            </span>
+                          </div>
+                          <p>{target.latestSimulation.summary}</p>
+                          <p className="muted">
+                            {target.latestSimulation.actor} · {new Date(target.latestSimulation.timestamp).toLocaleString()}
+                          </p>
+                        </div>
+                      ) : (
+                        <p className="muted">No dry-run has been recorded for this target yet.</p>
+                      )}
+                      {target.runbookId ? (
+                        <button
+                          className="secondary-button"
+                          onClick={() =>
+                            simulateMutation.mutate({
+                              runbookId: target.runbookId!,
+                              targetService: target.targetService
+                            })
+                          }
+                          disabled={simulateMutation.isPending}
+                        >
+                          {simulateMutation.isPending ? "Running dry-run..." : "Run dry-run"}
+                        </button>
+                      ) : null}
                     </div>
                   ))}
                 </div>

@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { Test } from "@nestjs/testing";
 import { FastifyAdapter } from "@nestjs/platform-fastify";
-import { seedIncidents } from "@enterprise-resilience/contracts";
+import { seedIncidents, seedRunbooks } from "@enterprise-resilience/contracts";
 import { AppModule } from "../dist/app.module.js";
 import { RedisService } from "../dist/common/redis.service.js";
 import { StoreService } from "../dist/common/store.service.js";
@@ -13,8 +13,12 @@ class FakeStoreService {
   constructor(seed = seedIncidents) {
     this.incidents = new Map();
     this.auditEvents = [];
+    this.runbooks = new Map();
     for (const incident of structuredClone(seed)) {
       this.incidents.set(incident.incidentId, incident);
+    }
+    for (const runbook of structuredClone(seedRunbooks)) {
+      this.runbooks.set(runbook.runbookId, runbook);
     }
   }
 
@@ -111,15 +115,19 @@ class FakeStoreService {
   }
 
   async listRunbooks() {
-    return [];
+    return [...this.runbooks.values()];
   }
 
-  async getRunbook() {
-    return undefined;
+  async getRunbook(runbookId) {
+    return this.runbooks.get(runbookId);
   }
 
   async listAuditEvents() {
     return this.auditEvents;
+  }
+
+  async listAuditEventsByProvider(provider) {
+    return this.auditEvents.filter((event) => event.provider === provider);
   }
 
   async listAuditEventsForIncident(incidentId) {
@@ -367,5 +375,35 @@ const managerHeaders = {
     assert.equal(body.userId, "manager.demo");
     assert.equal(body.role, "incident-manager");
     assert.equal(body.source, "demo-default");
+  });
+
+  test("records provider-tagged audit history for dry-runs and filters it by provider", async () => {
+    const simulateResponse = await app.inject({
+      method: "POST",
+      url: "/api/runbooks/gcp-cloud-run-shift-revision/simulate",
+      headers: managerHeaders,
+      payload: {
+        dryRun: true,
+        targetService: "payment-routing"
+      }
+    });
+    const simulation = simulateResponse.json();
+
+    assert.equal(simulateResponse.statusCode, 201);
+    assert.equal(simulation.provider, "gcp");
+    assert.equal(simulation.status, "passed");
+
+    const auditResponse = await app.inject({
+      method: "GET",
+      url: "/api/audit/events?provider=gcp",
+      headers: managerHeaders
+    });
+    const body = auditResponse.json();
+
+    assert.equal(auditResponse.statusCode, 200);
+    assert.equal(body[0].provider, "gcp");
+    assert.equal(body[0].targetService, "payment-routing");
+    assert.equal(body[0].runbookId, "gcp-cloud-run-shift-revision");
+    assert.match(body[0].summary, /runbook simulation passed/i);
   });
 });

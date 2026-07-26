@@ -1,11 +1,16 @@
 import { Injectable } from "@nestjs/common";
+import type { CloudProvider } from "@enterprise-resilience/contracts";
 import { StoreService } from "../common/store.service.js";
 
 @Injectable()
 export class AuditService {
   constructor(private readonly store: StoreService) {}
 
-  listEvents() {
+  listEvents(provider?: CloudProvider) {
+    if (provider) {
+      return this.store.listAuditEventsByProvider(provider);
+    }
+
     return this.store.listAuditEvents();
   }
 

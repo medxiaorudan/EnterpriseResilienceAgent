@@ -2,15 +2,17 @@ import { Injectable } from "@nestjs/common";
 import type { PlatformStatusSummary } from "@enterprise-resilience/contracts";
 import { AwsConfigService } from "../cloud-adapters/aws-config.service.js";
 import { GcpConfigService } from "../cloud-adapters/gcp-config.service.js";
+import { StoreService } from "../common/store.service.js";
 
 @Injectable()
 export class PlatformService {
   constructor(
     private readonly awsConfig: AwsConfigService,
-    private readonly gcpConfig: GcpConfigService
+    private readonly gcpConfig: GcpConfigService,
+    private readonly store: StoreService
   ) {}
 
-  getStatus(): PlatformStatusSummary {
+  async getStatus(): Promise<PlatformStatusSummary> {
     const appBaseUrl = process.env.APP_BASE_URL ?? "http://localhost:5173";
     const apiBaseUrl = process.env.API_PUBLIC_URL ?? "http://localhost:3000/api";
     const databaseUrl = process.env.DATABASE_URL;
@@ -18,6 +20,24 @@ export class PlatformService {
     const awsLiveExecution = this.awsConfig.isLiveExecutionEnabled();
     const gcpLiveExecution = this.gcpConfig.isLiveExecutionEnabled();
     const deploymentMode = process.env.DEPLOYMENT_MODE ?? "cloud-ready";
+    const auditEvents = await this.store.listAuditEvents();
+    const latestSimulationByTarget = new Map<string, (typeof auditEvents)[number]>();
+    for (const event of auditEvents) {
+      if (
+        event.category !== "execution" ||
+        !event.provider ||
+        !event.targetService ||
+        !event.runbookId ||
+        !event.summary.startsWith("Runbook simulation ")
+      ) {
+        continue;
+      }
+
+      const key = `${event.provider}:${event.targetService}:${event.runbookId}`;
+      if (!latestSimulationByTarget.has(key)) {
+        latestSimulationByTarget.set(key, event);
+      }
+    }
 
     return {
       productName: "Enterprise Resilience Agent",
@@ -88,7 +108,10 @@ export class PlatformService {
           environment: (target.environments[0] ?? "production") as "production" | "staging" | "development",
           region: target.region,
           runbookId: "aws-ecs-scale-service",
-          summary: `ECS target ${target.ecsServiceName} can scale from ${target.minDesiredCount} to ${target.maxDesiredCount} in ${target.region}.`
+          summary: `ECS target ${target.ecsServiceName} can scale from ${target.minDesiredCount} to ${target.maxDesiredCount} in ${target.region}.`,
+          latestSimulation: this.toLatestSimulation(
+            latestSimulationByTarget.get(`aws:${target.serviceId}:aws-ecs-scale-service`)
+          )
         })),
         ...this.gcpConfig.listTargets().map((target) => ({
           provider: "gcp" as const,
@@ -97,7 +120,10 @@ export class PlatformService {
           environment: (target.environments[0] ?? "production") as "production" | "staging" | "development",
           region: target.region,
           runbookId: "gcp-cloud-run-shift-revision",
-          summary: `Cloud Run target ${target.serviceName} can shift ${target.shiftPercent}% of traffic to revision ${target.previousRevision}.`
+          summary: `Cloud Run target ${target.serviceName} can shift ${target.shiftPercent}% of traffic to revision ${target.previousRevision}.`,
+          latestSimulation: this.toLatestSimulation(
+            latestSimulationByTarget.get(`gcp:${target.serviceId}:gcp-cloud-run-shift-revision`)
+          )
         }))
       ],
       accessLinks: [
@@ -131,6 +157,28 @@ export class PlatformService {
         "Configure DATABASE_URL and REDIS_URL before production use.",
         "Keep AWS and GCP live execution off until allowed targets and execution identities are verified."
       ]
+    };
+  }
+
+  private toLatestSimulation(
+    event:
+      | {
+          summary: string;
+          detail: string;
+          timestamp: string;
+          actor: string;
+        }
+      | undefined
+  ) {
+    if (!event) {
+      return undefined;
+    }
+
+    return {
+      status: event.summary.endsWith("passed") ? ("passed" as const) : ("failed" as const),
+      summary: event.detail,
+      timestamp: event.timestamp,
+      actor: event.actor
     };
   }
 }
