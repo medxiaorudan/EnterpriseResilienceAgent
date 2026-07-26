@@ -1,5 +1,6 @@
 import type {
   AuditEvent,
+  CloudChange,
   CloudService,
   IncidentRecord,
   IncidentTimelineEntry,
@@ -42,6 +43,18 @@ export function escalateIncident(incidentId: string) {
 
 export function listServices() {
   return apiRequest<CloudService[]>("/services");
+}
+
+export function getService(serviceId: string) {
+  return apiRequest<CloudService>(`/services/${serviceId}`);
+}
+
+export function getServiceChanges(serviceId: string) {
+  return apiRequest<CloudChange[]>(`/services/${serviceId}/changes`);
+}
+
+export function getServiceIncidents(serviceId: string) {
+  return apiRequest<IncidentRecord[]>(`/services/${serviceId}/incidents`);
 }
 
 export function listRunbooks() {

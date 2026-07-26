@@ -344,6 +344,36 @@ button {
   background: rgba(24, 34, 24, 0.04);
 }
 
+.sparkline-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.sparkline-row {
+  display: grid;
+  gap: 8px;
+}
+
+.sparkline-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.sparkline-track {
+  width: 100%;
+  height: 12px;
+  border-radius: 999px;
+  background: rgba(24, 34, 24, 0.08);
+  overflow: hidden;
+}
+
+.sparkline-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #0f766e, #166534);
+}
+
 .trend-strip {
   display: flex;
   flex-wrap: wrap;
