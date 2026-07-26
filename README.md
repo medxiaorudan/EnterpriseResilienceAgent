@@ -72,7 +72,6 @@ The current product slice supports these operation groups.
 
 ### Cloud support
 
-- AWS-first
 - Multicloud-ready structure
 - Seeded AWS and GCP examples
 
