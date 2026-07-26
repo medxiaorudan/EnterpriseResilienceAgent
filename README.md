@@ -208,8 +208,10 @@ For remote MCP clients:
 
 1. Start the API with `npm run dev:api`
 2. Start the HTTP MCP server with `npm run start:mcp:http`
-3. Point the client at `http://YOUR_HOST:3101/mcp`
-4. Check health at `http://YOUR_HOST:3101/healthz`
+3. Set `ERA_MCP_HTTP_BEARER_TOKEN` before exposing it remotely
+4. Point the client at `http://YOUR_HOST:3101/mcp`
+5. Send `Authorization: Bearer YOUR_TOKEN`
+6. Check health at `http://YOUR_HOST:3101/healthz`
 
 ## Project Structure
 

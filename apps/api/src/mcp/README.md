@@ -20,6 +20,13 @@ It also includes a streamable HTTP entrypoint for remote MCP clients.
   Example: `0.0.0.0`
 - `ERA_MCP_HTTP_PATH`
   Example: `/mcp`
+- `ERA_MCP_HTTP_BEARER_TOKEN`
+  Example: `change-this-long-random-token`
+
+Optional:
+
+- `ERA_MCP_HTTP_ALLOW_UNAUTHENTICATED`
+  Example: `false`
 
 If not set, the server defaults to:
 
@@ -29,3 +36,13 @@ If not set, the server defaults to:
 - `ERA_MCP_HTTP_PORT=3101`
 - `ERA_MCP_HTTP_HOST=0.0.0.0`
 - `ERA_MCP_HTTP_PATH=/mcp`
+
+For remote HTTP MCP clients, bearer auth is expected by default.
+
+Example request header:
+
+```text
+Authorization: Bearer change-this-long-random-token
+```
+
+Only set `ERA_MCP_HTTP_ALLOW_UNAUTHENTICATED=true` for local testing on a trusted machine.
