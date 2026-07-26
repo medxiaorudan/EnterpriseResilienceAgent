@@ -296,6 +296,48 @@ const managerHeaders = {
     assert.match(body.latestVerification.summary, /Dry-run completed/i);
   });
 
+  test("routes approval execution through the GCP adapter when the proposal targets GCP", async () => {
+    const incident = await fakeStore.getIncident(incidentId);
+    incident.proposals = [
+      {
+        actionId: "shift-payment-routing",
+        runbookId: "gcp-cloud-run-shift-revision",
+        runbookVersion: "2.1.0",
+        cloudProvider: "gcp",
+        targetService: "payment-routing",
+        targetEnvironment: "production",
+        reason: "Cloud Run revision rollback is the safest cross-cloud recovery step.",
+        riskLevel: "medium",
+        confidenceLevel: "medium",
+        expectedResult: "Restore payment routing health while keeping checkout stable.",
+        estimatedCostPerHour: 0.25,
+        maximumDurationMinutes: 20,
+        preconditions: ["Previous healthy revision is available"],
+        verificationChecks: ["GCP request error rate normalizes", "AWS checkout success rate recovers"],
+        rollbackRunbookId: "gcp-cloud-run-shift-revision",
+        approvalPolicy: "human-review-required"
+      }
+    ];
+    await fakeStore.updateIncident(incident);
+
+    const response = await app.inject({
+      method: "POST",
+      url: `/api/incidents/${incidentId}/approve`,
+      headers: managerHeaders,
+      payload: {
+        idempotencyKey: "gcp-approval-1"
+      }
+    });
+    const body = response.json();
+
+    assert.equal(response.statusCode, 201);
+    assert.equal(body.status, "RESOLVED");
+    assert.equal(body.latestExecution.steps[1].title, "Validate target");
+    assert.equal(body.latestExecution.steps[3].title, "Shift traffic to previous revision");
+    assert.match(body.latestExecution.steps[3].detail, /previous revision/i);
+    assert.match(body.latestVerification.summary, /request errors normalized/i);
+  });
+
   test("blocks approval when the current role is read-only", async () => {
     const response = await app.inject({
       method: "POST",

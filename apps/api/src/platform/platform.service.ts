@@ -1,10 +1,14 @@
 import { Injectable } from "@nestjs/common";
 import type { PlatformStatusSummary } from "@enterprise-resilience/contracts";
 import { AwsConfigService } from "../cloud-adapters/aws-config.service.js";
+import { GcpConfigService } from "../cloud-adapters/gcp-config.service.js";
 
 @Injectable()
 export class PlatformService {
-  constructor(private readonly awsConfig: AwsConfigService) {}
+  constructor(
+    private readonly awsConfig: AwsConfigService,
+    private readonly gcpConfig: GcpConfigService
+  ) {}
 
   getStatus(): PlatformStatusSummary {
     const appBaseUrl = process.env.APP_BASE_URL ?? "http://localhost:5173";
@@ -12,6 +16,7 @@ export class PlatformService {
     const databaseUrl = process.env.DATABASE_URL;
     const redisUrl = process.env.REDIS_URL;
     const awsLiveExecution = this.awsConfig.isLiveExecutionEnabled();
+    const gcpLiveExecution = this.gcpConfig.isLiveExecutionEnabled();
     const deploymentMode = process.env.DEPLOYMENT_MODE ?? "cloud-ready";
 
     return {
@@ -60,6 +65,14 @@ export class PlatformService {
             : "Running in safe simulation mode until AWS_ECS_LIVE_EXECUTION=true."
         },
         {
+          name: "GCP execution adapter",
+          kind: "cloud-adapter",
+          status: gcpLiveExecution ? "ready" : "disabled",
+          summary: gcpLiveExecution
+            ? "Cloud Run traffic-shift execution is enabled for approved targets."
+            : "Running in safe simulation mode until GCP_CLOUD_RUN_LIVE_EXECUTION=true."
+        },
+        {
           name: "User guide",
           kind: "documentation",
           status: "ready",
@@ -96,7 +109,7 @@ export class PlatformService {
       nextSteps: [
         "Set APP_BASE_URL and API_PUBLIC_URL for the real environment.",
         "Configure DATABASE_URL and REDIS_URL before production use.",
-        "Keep AWS live execution off until allowed targets and execution role are verified."
+        "Keep AWS and GCP live execution off until allowed targets and execution identities are verified."
       ]
     };
   }

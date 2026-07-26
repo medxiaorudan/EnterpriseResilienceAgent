@@ -1,13 +1,20 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import type { CloudOperationsAdapter, CloudProvider } from "@enterprise-resilience/contracts";
 import { AwsOperationsAdapter } from "./providers/aws-operations.adapter.js";
+import { GcpOperationsAdapter } from "./providers/gcp-operations.adapter.js";
 
 @Injectable()
 export class CloudAdaptersService {
   private readonly adapters: Map<CloudProvider, CloudOperationsAdapter>;
 
-  constructor(awsAdapter: AwsOperationsAdapter) {
-    this.adapters = new Map<CloudProvider, CloudOperationsAdapter>([["aws", awsAdapter]]);
+  constructor(
+    awsAdapter: AwsOperationsAdapter,
+    gcpAdapter: GcpOperationsAdapter
+  ) {
+    this.adapters = new Map<CloudProvider, CloudOperationsAdapter>([
+      ["aws", awsAdapter],
+      ["gcp", gcpAdapter]
+    ]);
   }
 
   getAdapter(provider: CloudProvider) {
