@@ -5,6 +5,6 @@ import { CloudAdaptersService } from "./cloud-adapters.service.js";
 
 @Module({
   providers: [AwsConfigService, AwsOperationsAdapter, CloudAdaptersService],
-  exports: [CloudAdaptersService]
+  exports: [AwsConfigService, CloudAdaptersService]
 })
 export class CloudAdaptersModule {}

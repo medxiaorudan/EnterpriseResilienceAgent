@@ -1,0 +1,47 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: resilience
+      POSTGRES_USER: resilience
+      POSTGRES_PASSWORD: resilience
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    environment:
+      PORT: 3000
+      APP_ENVIRONMENT: production
+      DEPLOYMENT_MODE: container
+      APP_BASE_URL: http://localhost:8080
+      API_PUBLIC_URL: http://localhost:8080/api
+      DATABASE_URL: postgresql://resilience:resilience@postgres:5432/resilience
+      REDIS_URL: redis://redis:6379
+      AWS_ECS_LIVE_EXECUTION: "false"
+    depends_on:
+      - postgres
+      - redis
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+      args:
+        VITE_API_BASE_URL: /api
+    ports:
+      - "8080:80"
+    depends_on:
+      - api
+
+volumes:
+  postgres_data:
+  redis_data:

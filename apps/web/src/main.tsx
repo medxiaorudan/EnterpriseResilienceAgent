@@ -7,6 +7,7 @@ import { AuditPage } from "./pages/audit-page.js";
 import { IncidentDetailPage } from "./pages/incident-detail-page.js";
 import { IncidentsPage } from "./pages/incidents-page.js";
 import { OverviewPage } from "./pages/overview-page.js";
+import { PlatformPage } from "./pages/platform-page.js";
 import { ApprovalsPage } from "./pages/approvals-page.js";
 import { RunbooksPage } from "./pages/runbooks-page.js";
 import { ServicesPage } from "./pages/services-page.js";
@@ -26,6 +27,10 @@ const router = createBrowserRouter([
       {
         path: "overview",
         element: <OverviewPage />
+      },
+      {
+        path: "platform",
+        element: <PlatformPage />
       },
       {
         path: "incidents",

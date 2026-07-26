@@ -44,6 +44,7 @@
 | [24. Common questions](#24-common-questions) | Frequently asked questions |
 | [25. Glossary](#25-glossary) | Simple definitions |
 | [26. Approval checklist](#26-quick-approval-checklist) | Final decision checklist |
+| [27. Where to open the system](#27-where-to-open-the-system) | Which screen each person should use |
 
 ---
 
@@ -1115,6 +1116,23 @@ Before approving, confirm:
 - [ ] No security or compliance block exists
 
 > When any important item is missing, select **Escalate to on-call**.
+
+---
+
+# 27. Where to open the system
+
+If you are not technical, start with these screens:
+
+| Need | Open this page | Why |
+|---|---|---|
+| See the big picture | `/overview` | Shows active incidents, customer impact, and current approvals |
+| Decide whether to approve | `/approvals` | Shows the proposed action, risk, cost, and expected result |
+| Check if the platform is fully connected | `/platform` | Shows whether the dashboard, API, database, Redis, and AWS adapter are ready |
+| Review history later | `/audit` | Shows what happened, who approved it, and the final outcome |
+
+If the system is deployed with the provided container stack, these pages are available from the same browser window, usually at:
+
+`http://your-dashboard-url/overview`
 
 ---
 

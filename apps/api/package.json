@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "start:dev": "nest start --watch",
+    "start:prod": "node dist/main.js",
     "build": "nest build",
     "typecheck": "tsc --noEmit",
     "test": "npm run build && node --test test/**/*.test.js"

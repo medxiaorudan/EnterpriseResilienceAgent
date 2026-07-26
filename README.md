@@ -46,6 +46,31 @@ npm run dev:web
 
 The API reads Postgres and Redis connection settings from `.env`/environment variables. A starter configuration is in [.env.example](/Users/rudan/Documents/hobby_projects/EnterpriseResilienceAgent/.env.example).
 
+## Dashboard And Access
+
+- Non-technical users start in the web dashboard at `/overview`
+- Deployment and runtime connection status is visible at `/platform`
+- Approvers use `/approvals`
+- Auditors use `/audit`
+- Integrations use `GET /api/platform/status` plus the incident and runbook APIs
+
+## Container Deployment
+
+For a production-style local deployment:
+
+```bash
+docker compose -f docker-compose.prod.yml up --build
+```
+
+Then open `http://localhost:8080`. The web container proxies `/api` to the API container, so the dashboard and API work behind one URL.
+
+Before deploying to a real environment, set:
+
+- `APP_BASE_URL` to the public dashboard URL
+- `API_PUBLIC_URL` to the public API URL
+- `DATABASE_URL` and `REDIS_URL` to managed services
+- `AWS_ECS_ALLOWED_TARGETS` and `AWS_EXECUTION_ROLE_ARN` only after guardrails are validated
+
 ## AWS Execution Contract
 
 Real ECS execution is disabled by default. To enable it, set:
@@ -88,3 +113,4 @@ The API now exposes LLMOps capability metadata:
 - `GET /api/llmops/profile`
 - `GET /api/llmops/providers`
 - `GET /api/llmops/tool-layer-fit`
+- `GET /api/platform/status`

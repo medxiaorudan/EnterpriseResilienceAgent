@@ -249,6 +249,32 @@ export interface ToolLayerFit {
   roleInThisProject: string;
 }
 
+export interface PlatformStatusComponent {
+  name: string;
+  kind: "ui" | "api" | "database" | "cache" | "cloud-adapter" | "documentation";
+  status: "ready" | "configuration-needed" | "disabled";
+  summary: string;
+  url?: string;
+}
+
+export interface PlatformAccessLink {
+  label: string;
+  audience: "business" | "engineering" | "audit";
+  path: string;
+  summary: string;
+}
+
+export interface PlatformStatusSummary {
+  productName: string;
+  deploymentMode: "local" | "container" | "cloud-ready";
+  environmentName: string;
+  apiBasePath: string;
+  generatedAt: string;
+  components: PlatformStatusComponent[];
+  accessLinks: PlatformAccessLink[];
+  nextSteps: string[];
+}
+
 export interface MetricQuery {
   serviceId: string;
   metricName: string;
