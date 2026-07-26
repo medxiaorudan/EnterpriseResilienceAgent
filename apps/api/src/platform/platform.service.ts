@@ -52,12 +52,15 @@ export class PlatformService {
             event.runbookId === runbookId &&
             (event.summary.startsWith("Runbook simulation ") ||
               event.summary === "Incident action approved" ||
-              event.summary === "Recovery verified")
+              event.summary === "Recovery verified" ||
+              event.summary.toLowerCase().includes("rollback"))
         )
         .slice(0, 4)
         .map((event) => ({
           kind: event.summary.startsWith("Runbook simulation ")
             ? ("simulation" as const)
+            : event.summary.toLowerCase().includes("rollback")
+              ? ("rollback" as const)
             : event.summary === "Recovery verified"
               ? ("verification" as const)
               : ("approval" as const),

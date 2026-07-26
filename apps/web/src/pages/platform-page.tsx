@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Badge, Card, Stat } from "@enterprise-resilience/ui";
 import { simulateRunbook } from "@/api/incidents.js";
 import { getPlatformStatus } from "@/api/platform.js";
+import { Link } from "react-router-dom";
 
 function componentTone(status: "ready" | "configuration-needed" | "disabled") {
   if (status === "ready") {
@@ -13,6 +14,23 @@ function componentTone(status: "ready" | "configuration-needed" | "disabled") {
   }
 
   return "default" as const;
+}
+
+function formatRelativeTime(timestamp: string) {
+  const deltaMs = Date.now() - new Date(timestamp).getTime();
+  const deltaMinutes = Math.max(1, Math.floor(deltaMs / 60000));
+
+  if (deltaMinutes < 60) {
+    return `${deltaMinutes} min ago`;
+  }
+
+  const deltaHours = Math.floor(deltaMinutes / 60);
+  if (deltaHours < 24) {
+    return `${deltaHours} hr ago`;
+  }
+
+  const deltaDays = Math.floor(deltaHours / 24);
+  return `${deltaDays} day${deltaDays === 1 ? "" : "s"} ago`;
 }
 
 export function PlatformPage() {
@@ -122,9 +140,21 @@ export function PlatformPage() {
                         <span className="provider-chip">{target.targetService}</span>
                         <span className="provider-chip provider-chip-muted">{target.executionMode}</span>
                       </div>
+                      <Link
+                        to={`/platform/${target.provider}/${target.targetService}`}
+                        className="target-link"
+                      >
+                        Open target timeline
+                      </Link>
                       <p>{target.summary}</p>
                       <p className="muted">
                         {target.environment} · {target.region ?? "managed region"} · {target.runbookId ?? "registered runbook"}
+                      </p>
+                      <p className="muted">
+                        Last live success:{" "}
+                        {target.lastSuccessfulLiveAction
+                          ? formatRelativeTime(target.lastSuccessfulLiveAction.timestamp)
+                          : "not recorded"}
                       </p>
                       {target.latestSimulation ? (
                         <div className="simulation-box">

@@ -258,6 +258,11 @@ button {
   color: rgba(24, 34, 24, 0.74);
 }
 
+.target-link {
+  color: var(--accent-dark);
+  font-weight: 600;
+}
+
 .row-card,
 .table-row {
   display: flex;
@@ -337,6 +342,31 @@ button {
   padding: 12px;
   border-radius: 14px;
   background: rgba(24, 34, 24, 0.04);
+}
+
+.trend-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.trend-node {
+  display: grid;
+  place-items: center;
+  min-width: 72px;
+  padding: 14px 10px;
+  border-radius: 16px;
+  color: #fffdf7;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.activity-dot-good {
+  background: linear-gradient(135deg, #166534, #0f766e);
+}
+
+.activity-dot-failed {
+  background: linear-gradient(135deg, #b42318, #b45309);
 }
 
 .verification-box-warning {

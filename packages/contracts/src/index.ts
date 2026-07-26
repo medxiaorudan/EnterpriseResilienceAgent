@@ -277,7 +277,7 @@ export interface PlatformProviderTarget {
   region?: string;
   runbookId?: string;
   recentActivity: Array<{
-    kind: "simulation" | "approval" | "verification";
+    kind: "simulation" | "approval" | "verification" | "rollback";
     status: "passed" | "failed" | "completed";
     summary: string;
     timestamp: string;
