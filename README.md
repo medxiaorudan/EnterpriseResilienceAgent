@@ -149,12 +149,6 @@ Typical usage:
 
 The MCP server exposes incident, approval, runbook, audit, service, session, and platform-status tools.
 
-### Option 4. Use as a downloadable tool
-
-This is not included yet in the repository.
-
-Today, the practical way to use the project is to deploy it as a web application and API.
-
 ## Quick Configuration
 
 The project needs these main settings:
