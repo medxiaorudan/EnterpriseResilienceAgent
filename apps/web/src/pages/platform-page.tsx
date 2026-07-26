@@ -141,6 +141,47 @@ export function PlatformPage() {
                       ) : (
                         <p className="muted">No dry-run has been recorded for this target yet.</p>
                       )}
+                      {target.executionMode === "live-enabled" ? (
+                        target.lastSuccessfulLiveAction ? (
+                          <div className="simulation-box">
+                            <div className="provider-chip-row">
+                              <span className="provider-chip">last live success</span>
+                            </div>
+                            <p>{target.lastSuccessfulLiveAction.summary}</p>
+                            <p className="muted">
+                              {target.lastSuccessfulLiveAction.actor} ·{" "}
+                              {new Date(target.lastSuccessfulLiveAction.timestamp).toLocaleString()}
+                            </p>
+                          </div>
+                        ) : (
+                          <p className="muted">Live execution is enabled, but no successful live action is recorded yet.</p>
+                        )
+                      ) : (
+                        <p className="muted">Enable live execution to track the last successful live action for this target.</p>
+                      )}
+                      {target.recentActivity.length > 0 ? (
+                        <div className="activity-list">
+                          {target.recentActivity.map((activity) => (
+                            <div
+                              key={`${target.provider}-${target.targetService}-${activity.timestamp}-${activity.kind}`}
+                              className="activity-item"
+                            >
+                              <div className="provider-chip-row">
+                                <span className="provider-chip provider-chip-muted">
+                                  {activity.kind}
+                                </span>
+                                <span className="provider-chip provider-chip-muted">
+                                  {activity.live ? "live" : "dry-run"}
+                                </span>
+                              </div>
+                              <p>{activity.summary}</p>
+                              <p className="muted">
+                                {activity.actor} · {new Date(activity.timestamp).toLocaleString()}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
                       {target.runbookId ? (
                         <button
                           className="secondary-button"

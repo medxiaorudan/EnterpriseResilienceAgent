@@ -406,4 +406,64 @@ const managerHeaders = {
     assert.equal(body[0].runbookId, "gcp-cloud-run-shift-revision");
     assert.match(body[0].summary, /runbook simulation passed/i);
   });
+
+  test("exposes target activity history and last successful live action in platform status", async () => {
+    const incident = await fakeStore.getIncident(incidentId);
+    incident.proposals = [
+      {
+        actionId: "shift-payment-routing",
+        runbookId: "gcp-cloud-run-shift-revision",
+        runbookVersion: "2.1.0",
+        cloudProvider: "gcp",
+        targetService: "payment-routing",
+        targetEnvironment: "production",
+        reason: "Cloud Run revision rollback is the safest cross-cloud recovery step.",
+        riskLevel: "medium",
+        confidenceLevel: "medium",
+        expectedResult: "Restore payment routing health while keeping checkout stable.",
+        estimatedCostPerHour: 0.25,
+        maximumDurationMinutes: 20,
+        preconditions: ["Previous healthy revision is available"],
+        verificationChecks: ["GCP request error rate normalizes", "AWS checkout success rate recovers"],
+        rollbackRunbookId: "gcp-cloud-run-shift-revision",
+        approvalPolicy: "human-review-required"
+      }
+    ];
+    await fakeStore.updateIncident(incident);
+
+    await app.inject({
+      method: "POST",
+      url: "/api/runbooks/gcp-cloud-run-shift-revision/simulate",
+      headers: managerHeaders,
+      payload: {
+        dryRun: true,
+        targetService: "payment-routing"
+      }
+    });
+
+    await app.inject({
+      method: "POST",
+      url: `/api/incidents/${incidentId}/approve`,
+      headers: managerHeaders,
+      payload: {
+        idempotencyKey: "gcp-platform-history"
+      }
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/platform/status",
+      headers: managerHeaders
+    });
+    const body = response.json();
+    const gcpTarget = body.providerTargets.find((target) => target.provider === "gcp");
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(gcpTarget.targetService, "payment-routing");
+    assert.equal(gcpTarget.latestSimulation.status, "passed");
+    assert.ok(gcpTarget.recentActivity.length >= 2);
+    assert.equal(gcpTarget.recentActivity[0].kind, "simulation");
+    assert.equal(gcpTarget.recentActivity.some((item) => item.kind === "verification"), true);
+    assert.match(gcpTarget.lastSuccessfulLiveAction.summary, /request errors normalized/i);
+  });
 });

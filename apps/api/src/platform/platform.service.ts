@@ -39,6 +39,66 @@ export class PlatformService {
       }
     }
 
+    const buildTargetActivity = (
+      provider: "aws" | "gcp",
+      targetService: string,
+      runbookId: string
+    ) =>
+      auditEvents
+        .filter(
+          (event) =>
+            event.provider === provider &&
+            event.targetService === targetService &&
+            event.runbookId === runbookId &&
+            (event.summary.startsWith("Runbook simulation ") ||
+              event.summary === "Incident action approved" ||
+              event.summary === "Recovery verified")
+        )
+        .slice(0, 4)
+        .map((event) => ({
+          kind: event.summary.startsWith("Runbook simulation ")
+            ? ("simulation" as const)
+            : event.summary === "Recovery verified"
+              ? ("verification" as const)
+              : ("approval" as const),
+          status: event.summary.startsWith("Runbook simulation ")
+            ? event.summary.endsWith("passed")
+              ? ("passed" as const)
+              : ("failed" as const)
+            : event.summary === "Recovery verified"
+              ? ("completed" as const)
+              : ("completed" as const),
+          summary: event.detail,
+          timestamp: event.timestamp,
+          actor: event.actor,
+          live: !event.summary.startsWith("Runbook simulation ")
+        }));
+
+    const buildLastSuccessfulLiveAction = (
+      provider: "aws" | "gcp",
+      targetService: string,
+      runbookId: string
+    ) => {
+      const event = auditEvents.find(
+        (item) =>
+          item.provider === provider &&
+          item.targetService === targetService &&
+          item.runbookId === runbookId &&
+          item.summary === "Recovery verified" &&
+          !item.detail.toLowerCase().includes("dry-run")
+      );
+
+      if (!event) {
+        return undefined;
+      }
+
+      return {
+        summary: event.detail,
+        timestamp: event.timestamp,
+        actor: event.actor
+      };
+    };
+
     return {
       productName: "Enterprise Resilience Agent",
       deploymentMode: deploymentMode === "local" || deploymentMode === "container" ? deploymentMode : "cloud-ready",
@@ -109,9 +169,11 @@ export class PlatformService {
           region: target.region,
           runbookId: "aws-ecs-scale-service",
           summary: `ECS target ${target.ecsServiceName} can scale from ${target.minDesiredCount} to ${target.maxDesiredCount} in ${target.region}.`,
+          recentActivity: buildTargetActivity("aws", target.serviceId, "aws-ecs-scale-service"),
           latestSimulation: this.toLatestSimulation(
             latestSimulationByTarget.get(`aws:${target.serviceId}:aws-ecs-scale-service`)
-          )
+          ),
+          lastSuccessfulLiveAction: buildLastSuccessfulLiveAction("aws", target.serviceId, "aws-ecs-scale-service")
         })),
         ...this.gcpConfig.listTargets().map((target) => ({
           provider: "gcp" as const,
@@ -121,9 +183,11 @@ export class PlatformService {
           region: target.region,
           runbookId: "gcp-cloud-run-shift-revision",
           summary: `Cloud Run target ${target.serviceName} can shift ${target.shiftPercent}% of traffic to revision ${target.previousRevision}.`,
+          recentActivity: buildTargetActivity("gcp", target.serviceId, "gcp-cloud-run-shift-revision"),
           latestSimulation: this.toLatestSimulation(
             latestSimulationByTarget.get(`gcp:${target.serviceId}:gcp-cloud-run-shift-revision`)
-          )
+          ),
+          lastSuccessfulLiveAction: buildLastSuccessfulLiveAction("gcp", target.serviceId, "gcp-cloud-run-shift-revision")
         }))
       ],
       accessLinks: [

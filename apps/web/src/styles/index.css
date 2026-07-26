@@ -328,6 +328,17 @@ button {
   background: rgba(22, 101, 52, 0.08);
 }
 
+.activity-list {
+  display: grid;
+  gap: 10px;
+}
+
+.activity-item {
+  padding: 12px;
+  border-radius: 14px;
+  background: rgba(24, 34, 24, 0.04);
+}
+
 .verification-box-warning {
   background: rgba(180, 83, 9, 0.1);
 }

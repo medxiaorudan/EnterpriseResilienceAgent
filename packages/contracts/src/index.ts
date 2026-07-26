@@ -276,8 +276,21 @@ export interface PlatformProviderTarget {
   summary: string;
   region?: string;
   runbookId?: string;
+  recentActivity: Array<{
+    kind: "simulation" | "approval" | "verification";
+    status: "passed" | "failed" | "completed";
+    summary: string;
+    timestamp: string;
+    actor: string;
+    live: boolean;
+  }>;
   latestSimulation?: {
     status: "passed" | "failed";
+    summary: string;
+    timestamp: string;
+    actor: string;
+  };
+  lastSuccessfulLiveAction?: {
     summary: string;
     timestamp: string;
     actor: string;
