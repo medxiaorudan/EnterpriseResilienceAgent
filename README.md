@@ -85,10 +85,7 @@ The current product slice supports these operation groups.
 - Web dashboard
 - REST API
 - MCP server
-
-### User access modes not yet packaged in this repo
-
-- Downloadable desktop tool
+- Downloadable desktop operator app
 
 ## How Non-Technical Users Should Use It
 
@@ -150,6 +147,17 @@ Typical usage:
 3. Point your MCP host to the example config in [.vscode/mcp.json.example](/Users/rudan/Documents/hobby_projects/EnterpriseResilienceAgent/.vscode/mcp.json.example).
 
 The MCP server exposes incident, approval, runbook, audit, service, session, and platform-status tools.
+
+### Option 4. Use the downloadable operator app
+
+This is included as an Electron desktop shell for the web dashboard.
+
+Typical usage:
+
+1. Start the API and web app, or deploy the dashboard remotely.
+2. Run `npm run start:operator` for a local desktop session.
+3. Enter the dashboard URL in the connection window.
+4. The operator app opens the dashboard in a dedicated desktop window.
 
 ## Quick Configuration
 
@@ -213,6 +221,24 @@ For remote MCP clients:
 5. Point the client at `http://YOUR_HOST:3101/mcp`
 6. Send `Authorization: Bearer YOUR_TOKEN`
 7. Check health at `http://YOUR_HOST:3101/healthz`
+
+The HTTP MCP server can also expose OAuth discovery metadata when these are configured:
+
+- `ERA_MCP_PUBLIC_URL`
+- `ERA_MCP_OIDC_AUTHORIZATION_ENDPOINT`
+- `ERA_MCP_OIDC_TOKEN_ENDPOINT`
+
+That enables:
+
+- `/.well-known/oauth-authorization-server`
+- `/.well-known/oauth-protected-resource/...`
+
+## Operator App Quick Start
+
+1. Start the dashboard locally with `npm run dev:web` or deploy it remotely
+2. Run `npm run start:operator`
+3. Enter a dashboard URL such as `http://127.0.0.1:5173/overview` or `https://ops.example.com/overview`
+4. To build downloadable packages, run `npm run build:operator`
 
 ## Project Structure
 

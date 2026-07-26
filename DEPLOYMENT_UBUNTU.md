@@ -247,6 +247,58 @@ Then redeploy:
 docker compose -f docker-compose.prod.yml --env-file .env up --build -d
 ```
 
+## Reverse Proxy For MCP HTTP
+
+If you expose the remote MCP HTTP transport, proxy both the MCP path and the OAuth discovery routes.
+
+Example Nginx configuration:
+
+```nginx
+server {
+    listen 443 ssl http2;
+    server_name ops.example.com;
+
+    location /mcp {
+        proxy_pass http://127.0.0.1:3101/mcp;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header Authorization $http_authorization;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_buffering off;
+    }
+
+    location /.well-known/oauth-authorization-server {
+        proxy_pass http://127.0.0.1:3101/.well-known/oauth-authorization-server;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /.well-known/oauth-protected-resource/ {
+        proxy_pass http://127.0.0.1:3101/.well-known/oauth-protected-resource/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /healthz {
+        proxy_pass http://127.0.0.1:3101/healthz;
+    }
+}
+```
+
+Recommended MCP environment variables for reverse-proxied production use:
+
+```env
+ERA_MCP_PUBLIC_URL=https://ops.example.com/mcp
+ERA_MCP_OIDC_ISSUER=https://login.example.com/realms/platform
+ERA_MCP_OIDC_AUDIENCE=enterprise-resilience-mcp
+ERA_MCP_OIDC_JWKS_URL=https://login.example.com/realms/platform/protocol/openid-connect/certs
+ERA_MCP_OIDC_AUTHORIZATION_ENDPOINT=https://login.example.com/realms/platform/protocol/openid-connect/auth
+ERA_MCP_OIDC_TOKEN_ENDPOINT=https://login.example.com/realms/platform/protocol/openid-connect/token
+ERA_MCP_HTTP_PORT=3101
+ERA_MCP_HTTP_HOST=127.0.0.1
+```
+
 ## Backups
 
 Backup Postgres:

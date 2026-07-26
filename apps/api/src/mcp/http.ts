@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage } from "node:http";
 import { Buffer } from "node:buffer";
+import { oauthMetadataResponse, type AuthMetadataOptions } from "@modelcontextprotocol/server";
 import { validateMcpHttpAuth } from "./http-auth.js";
 import { mcpHttpHandler } from "./server.js";
 
@@ -12,6 +13,12 @@ const oidcIssuer = process.env.ERA_MCP_OIDC_ISSUER;
 const oidcAudience = process.env.ERA_MCP_OIDC_AUDIENCE;
 const oidcJwksUrl = process.env.ERA_MCP_OIDC_JWKS_URL;
 const oidcJwksJson = process.env.ERA_MCP_OIDC_JWKS_JSON;
+const mcpPublicUrl = process.env.ERA_MCP_PUBLIC_URL;
+const oidcAuthorizationEndpoint = process.env.ERA_MCP_OIDC_AUTHORIZATION_ENDPOINT;
+const oidcTokenEndpoint = process.env.ERA_MCP_OIDC_TOKEN_ENDPOINT;
+const oidcRegistrationEndpoint = process.env.ERA_MCP_OIDC_REGISTRATION_ENDPOINT;
+const oidcScopes = process.env.ERA_MCP_OIDC_SCOPES_SUPPORTED?.split(",").map((item) => item.trim()).filter(Boolean);
+const allowInsecureIssuer = process.env.ERA_MCP_OIDC_ALLOW_INSECURE_ISSUER_URL === "true";
 
 async function toRequest(req: IncomingMessage) {
   const chunks: Buffer[] = [];
@@ -52,12 +59,24 @@ async function toRequest(req: IncomingMessage) {
 
 createServer(async (req, res) => {
   try {
+    const request = await toRequest(req);
     const pathname = new URL(req.url ?? "/", `http://${req.headers.host ?? `${host}:${port}`}`).pathname;
 
     if (pathname === "/healthz") {
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ status: "ok", transport: "streamable-http", path: basePath }));
       return;
+    }
+
+    const metadataOptions = buildMetadataOptions();
+    if (metadataOptions) {
+      const metadataResponse = oauthMetadataResponse(request, metadataOptions);
+      if (metadataResponse) {
+        res.writeHead(metadataResponse.status, Object.fromEntries(metadataResponse.headers.entries()));
+        const bodyBuffer = Buffer.from(await metadataResponse.arrayBuffer());
+        res.end(bodyBuffer);
+        return;
+      }
     }
 
     if (!pathname.startsWith(basePath)) {
@@ -88,7 +107,7 @@ createServer(async (req, res) => {
       return;
     }
 
-    const response = await mcpHttpHandler.fetch(await toRequest(req));
+    const response = await mcpHttpHandler.fetch(request);
 
     res.writeHead(response.status, Object.fromEntries(response.headers.entries()));
     if (!response.body) {
@@ -111,3 +130,30 @@ createServer(async (req, res) => {
     `Enterprise Resilience Agent MCP HTTP listening on http://${host}:${port}${basePath} (${allowUnauthenticated ? "unauthenticated" : oidcIssuer ? "oidc-protected" : "bearer-protected"})`
   );
 });
+
+function buildMetadataOptions(): AuthMetadataOptions | undefined {
+  if (
+    !mcpPublicUrl ||
+    !oidcIssuer ||
+    !oidcAuthorizationEndpoint ||
+    !oidcTokenEndpoint ||
+    !oidcJwksUrl
+  ) {
+    return undefined;
+  }
+
+  return {
+    resourceServerUrl: new URL(mcpPublicUrl),
+    oauthMetadata: {
+      issuer: oidcIssuer,
+      authorization_endpoint: oidcAuthorizationEndpoint,
+      token_endpoint: oidcTokenEndpoint,
+      jwks_uri: oidcJwksUrl,
+      registration_endpoint: oidcRegistrationEndpoint
+    } as never,
+    scopesSupported: oidcScopes,
+    resourceName: "Enterprise Resilience Agent MCP",
+    serviceDocumentationUrl: new URL(mcpPublicUrl),
+    dangerouslyAllowInsecureIssuerUrl: allowInsecureIssuer
+  };
+}

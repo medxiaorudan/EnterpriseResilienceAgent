@@ -22,6 +22,8 @@ It also includes a streamable HTTP entrypoint for remote MCP clients.
   Example: `/mcp`
 - `ERA_MCP_HTTP_BEARER_TOKEN`
   Example: `change-this-long-random-token`
+- `ERA_MCP_PUBLIC_URL`
+  Example: `https://ops.example.com/mcp`
 - `ERA_MCP_OIDC_ISSUER`
   Example: `https://login.example.com/realms/platform`
 - `ERA_MCP_OIDC_AUDIENCE`
@@ -35,6 +37,14 @@ Optional:
   Example: `https://login.example.com/realms/platform/protocol/openid-connect/certs`
 - `ERA_MCP_OIDC_JWKS_JSON`
   Example: `{"keys":[...]}`
+- `ERA_MCP_OIDC_AUTHORIZATION_ENDPOINT`
+  Example: `https://login.example.com/realms/platform/protocol/openid-connect/auth`
+- `ERA_MCP_OIDC_TOKEN_ENDPOINT`
+  Example: `https://login.example.com/realms/platform/protocol/openid-connect/token`
+- `ERA_MCP_OIDC_REGISTRATION_ENDPOINT`
+  Example: `https://login.example.com/realms/platform/clients-registrations/openid-connect`
+- `ERA_MCP_OIDC_SCOPES_SUPPORTED`
+  Example: `openid,profile,email,enterprise-resilience-mcp`
 
 If not set, the server defaults to:
 
@@ -52,6 +62,9 @@ Preferred production setup:
 - configure `ERA_MCP_OIDC_ISSUER`
 - configure `ERA_MCP_OIDC_AUDIENCE`
 - configure either `ERA_MCP_OIDC_JWKS_URL` or `ERA_MCP_OIDC_JWKS_JSON`
+- configure `ERA_MCP_PUBLIC_URL`
+- configure `ERA_MCP_OIDC_AUTHORIZATION_ENDPOINT`
+- configure `ERA_MCP_OIDC_TOKEN_ENDPOINT`
 
 Example request header:
 
@@ -62,3 +75,8 @@ Authorization: Bearer change-this-long-random-token
 Only set `ERA_MCP_HTTP_ALLOW_UNAUTHENTICATED=true` for local testing on a trusted machine.
 
 If OIDC is configured, JWT validation is used before the static bearer token fallback.
+
+When `ERA_MCP_PUBLIC_URL` and the OIDC metadata fields are configured, the HTTP server also exposes:
+
+- `/.well-known/oauth-authorization-server`
+- `/.well-known/oauth-protected-resource/...`

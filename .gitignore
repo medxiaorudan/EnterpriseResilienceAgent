@@ -9,3 +9,4 @@ coverage
 *.tsbuildinfo
 plan.md
 enterprise_resilience_agent_storyboard.gif
+apps/web/release
