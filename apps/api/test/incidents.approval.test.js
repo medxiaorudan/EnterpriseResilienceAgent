@@ -820,6 +820,27 @@ const managerHeaders = {
     }
   });
 
+  test("shows only the selected cloud providers in platform status", async () => {
+    const previousProviders = process.env.ERA_ENABLED_CLOUD_PROVIDERS;
+    process.env.ERA_ENABLED_CLOUD_PROVIDERS = "aws";
+
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: "/api/platform/status",
+        headers: managerHeaders
+      });
+      const body = response.json();
+
+      assert.equal(response.statusCode, 200);
+      assert.deepEqual(body.activeCloudProviders, ["aws"]);
+      assert.equal(body.providerTargets.every((target) => target.provider === "aws"), true);
+      assert.equal(body.components.some((component) => component.name === "GCP execution adapter"), false);
+    } finally {
+      process.env.ERA_ENABLED_CLOUD_PROVIDERS = previousProviders;
+    }
+  });
+
   test("allows admins to disable and mute alert channels at runtime", async () => {
     const previousSingle = process.env.ALERT_WEBHOOK_URL;
     const previousMulti = process.env.ALERT_WEBHOOK_URLS;

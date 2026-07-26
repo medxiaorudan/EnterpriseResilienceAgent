@@ -1067,7 +1067,7 @@ The system should use cached topology, local incident state, and fallback commun
 
 ## Can the platform manage AWS, GCP, and Azure together?
 
-Yes. The incident and approval model stays common, while cloud-specific adapters perform provider operations.
+It can manage AWS and GCP in one shared control plane when a company explicitly enables both. Most companies should select only the cloud they actually use, so the screens stay simpler and easier to operate.
 
 ## Does the system replace SRE or operations teams?
 
@@ -1127,7 +1127,7 @@ If you are not technical, start with these screens:
 |---|---|---|
 | See the big picture | `/overview` | Shows active incidents, customer impact, and current approvals |
 | Decide whether to approve | `/approvals` | Shows the proposed action, risk, cost, and expected result |
-| Check if the platform is fully connected | `/platform` | Shows whether the dashboard, API, database, Redis, and AWS adapter are ready |
+| Check if the platform is fully connected | `/platform` | Shows whether the dashboard, API, database, Redis, and the selected cloud adapter are ready |
 | Review history later | `/audit` | Shows what happened, who approved it, and the final outcome |
 
 If the system is deployed with the provided container stack, these pages are available from the same browser window, usually at:

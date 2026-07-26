@@ -73,6 +73,7 @@ The current product slice supports these operation groups.
 ### Cloud support
 
 - Multicloud-ready structure
+- Choose AWS, GCP, or both with `ERA_ENABLED_CLOUD_PROVIDERS`
 - Seeded AWS and GCP examples
 
 ### Data and control services
@@ -167,12 +168,15 @@ The project needs these main settings:
 - `REDIS_URL`
 - `APP_BASE_URL`
 - `API_PUBLIC_URL`
+- `ERA_ENABLED_CLOUD_PROVIDERS`
 - `AWS_ECS_LIVE_EXECUTION`
 
 Starter values are available in [.env.example](/Users/rudan/Documents/hobby_projects/EnterpriseResilienceAgent/.env.example).
 
 Important:
 
+- Set `ERA_ENABLED_CLOUD_PROVIDERS=aws` or `ERA_ENABLED_CLOUD_PROVIDERS=gcp` when your company uses only one cloud
+- Use `ERA_ENABLED_CLOUD_PROVIDERS=aws,gcp` only when you intentionally want both lanes visible in the same control plane
 - Keep `AWS_ECS_LIVE_EXECUTION=false` until you are ready for bounded live actions
 - Use Postgres and Redis before production use
 - Set public URLs correctly so the dashboard and API links work as expected

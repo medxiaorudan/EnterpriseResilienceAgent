@@ -346,6 +346,7 @@ export interface PlatformStatusSummary {
   environmentName: string;
   apiBasePath: string;
   generatedAt: string;
+  activeCloudProviders: CloudProvider[];
   components: PlatformStatusComponent[];
   providerTargets: PlatformProviderTarget[];
   alertRouting: {

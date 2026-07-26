@@ -23,9 +23,13 @@ export function OverviewPage() {
   const platform = platformQuery.data;
   const activeIncidents = incidents.filter((incident) => !["RESOLVED", "ROLLED_BACK"].includes(incident.status));
   const providerTargets = platform?.providerTargets ?? [];
-  const awsTargets = providerTargets.filter((target) => target.provider === "aws");
-  const gcpTargets = providerTargets.filter((target) => target.provider === "gcp");
-  const gcpSimulationLane = gcpTargets[0];
+  const activeCloudProviders = platform?.activeCloudProviders ?? [];
+  const providerNames = activeCloudProviders.map((provider) => provider.toUpperCase());
+  const providerTargetGroups = activeCloudProviders.map((provider) => ({
+    provider,
+    targets: providerTargets.filter((target) => target.provider === provider)
+  }));
+  const featuredTarget = providerTargets[0];
   const providerCoverage = new Set(services.map((service) => service.cloudProvider));
   const alertedTargets = providerTargets.filter((target) => target.metricAlertState && target.metricAlertState !== "normal");
 
@@ -35,8 +39,8 @@ export function OverviewPage() {
         <p className="eyebrow">Overview</p>
         <h2>Business-first incident command view</h2>
         <p>
-          The MVP tracks AWS and GCP service health, incident state, approval gates, and auditable safe-remediation
-          proposals for the checkout journey.
+          The MVP tracks service health, incident state, approval gates, and auditable safe-remediation proposals for
+          the cloud provider your company chooses.
         </p>
       </section>
 
@@ -45,7 +49,11 @@ export function OverviewPage() {
           <Stat label="Active incidents" value={String(activeIncidents.length)} hint="Correlated and awaiting action" />
         </Card>
         <Card>
-          <Stat label="Protected services" value={String(services.length)} hint="AWS and GCP adapters seeded" />
+          <Stat
+            label="Protected services"
+            value={String(services.length)}
+            hint={providerNames.length > 0 ? `${providerNames.join(" · ")} execution lane${providerNames.length === 1 ? "" : "s"} configured` : "Cloud selection loading"}
+          />
         </Card>
         <Card>
           <Stat label="Approval queue" value={String(incidents.filter((item) => item.status === "AWAITING_APPROVAL").length)} hint="Human-controlled actions only" />
@@ -59,7 +67,7 @@ export function OverviewPage() {
       </div>
 
       <div className="two-column">
-        <Card title="Priority incidents" subtitle="Current cross-cloud resilience work">
+        <Card title="Priority incidents" subtitle="Current resilience work across the selected cloud scope">
           <div className="stack">
             {incidents.map((incident) => (
               <div key={incident.incidentId} className="row-card">
@@ -80,26 +88,19 @@ export function OverviewPage() {
           </div>
         </Card>
 
-        <Card title="Provider readiness" subtitle="Execution coverage across the control plane">
+        <Card title="Provider readiness" subtitle="Execution coverage across the selected cloud scope">
           <div className="stack">
-            <div className="row-card">
-              <div>
-                <strong>AWS execution lane</strong>
-                <p>{awsTargets.length} approved target{awsTargets.length === 1 ? "" : "s"} connected</p>
+            {providerTargetGroups.map(({ provider, targets }) => (
+              <div key={provider} className="row-card">
+                <div>
+                  <strong>{provider.toUpperCase()} execution lane</strong>
+                  <p>{targets.length} approved target{targets.length === 1 ? "" : "s"} connected</p>
+                </div>
+                <Badge tone={targets.some((target) => target.executionMode === "live-enabled") ? "good" : "default"}>
+                  {targets.some((target) => target.executionMode === "live-enabled") ? "live-enabled" : "simulation-only"}
+                </Badge>
               </div>
-              <Badge tone={awsTargets.some((target) => target.executionMode === "live-enabled") ? "good" : "default"}>
-                {awsTargets.some((target) => target.executionMode === "live-enabled") ? "live-enabled" : "simulation-only"}
-              </Badge>
-            </div>
-            <div className="row-card">
-              <div>
-                <strong>GCP execution lane</strong>
-                <p>{gcpTargets.length} approved target{gcpTargets.length === 1 ? "" : "s"} connected</p>
-              </div>
-              <Badge tone={gcpTargets.some((target) => target.executionMode === "live-enabled") ? "good" : "default"}>
-                {gcpTargets.some((target) => target.executionMode === "live-enabled") ? "live-enabled" : "simulation-only"}
-              </Badge>
-            </div>
+            ))}
             <div className="row-card">
               <div>
                 <strong>Protected provider coverage</strong>
@@ -123,37 +124,40 @@ export function OverviewPage() {
         </Card>
       </div>
 
-      <Card title="GCP simulation lane" subtitle="Provider-specific view for the Cloud Run rollback path">
-        {gcpSimulationLane ? (
+      <Card
+        title={featuredTarget ? `${featuredTarget.provider.toUpperCase()} simulation lane` : "Simulation lane"}
+        subtitle="Provider-specific view for the currently selected rollback path"
+      >
+        {featuredTarget ? (
           <div className="target-card">
             <div className="provider-chip-row">
-              <span className="provider-chip">GCP</span>
-              <span className="provider-chip provider-chip-muted">{gcpSimulationLane.executionMode}</span>
+              <span className="provider-chip">{featuredTarget.provider.toUpperCase()}</span>
+              <span className="provider-chip provider-chip-muted">{featuredTarget.executionMode}</span>
             </div>
-            <strong>{gcpSimulationLane.targetService}</strong>
-            <p>{gcpSimulationLane.summary}</p>
+            <strong>{featuredTarget.targetService}</strong>
+            <p>{featuredTarget.summary}</p>
             <div className="provider-chip-row">
               <span className="provider-chip provider-chip-muted">
-                monitor: {gcpSimulationLane.metricAlertState ?? "normal"}
+                monitor: {featuredTarget.metricAlertState ?? "normal"}
               </span>
             </div>
-            {gcpSimulationLane.latestSimulation ? (
+            {featuredTarget.latestSimulation ? (
               <div className="simulation-box">
-                <p>{gcpSimulationLane.latestSimulation.summary}</p>
+                <p>{featuredTarget.latestSimulation.summary}</p>
                 <p className="muted">
-                  Last dry-run by {gcpSimulationLane.latestSimulation.actor} on{" "}
-                  {new Date(gcpSimulationLane.latestSimulation.timestamp).toLocaleString()}
+                  Last dry-run by {featuredTarget.latestSimulation.actor} on{" "}
+                  {new Date(featuredTarget.latestSimulation.timestamp).toLocaleString()}
                 </p>
               </div>
             ) : (
-              <p className="muted">No GCP dry-run has been recorded yet.</p>
+              <p className="muted">No dry-run has been recorded yet for the selected provider.</p>
             )}
             <p className="muted">
-              Runbook: {gcpSimulationLane.runbookId} · Region: {gcpSimulationLane.region}
+              Runbook: {featuredTarget.runbookId} · Region: {featuredTarget.region}
             </p>
           </div>
         ) : (
-          <p>No GCP simulation lane is configured yet.</p>
+          <p>No simulation lane is configured for the selected provider yet.</p>
         )}
       </Card>
     </div>

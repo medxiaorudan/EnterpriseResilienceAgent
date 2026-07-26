@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type {
   AuthSession,
   CloudProvider,
+  PlatformStatusComponent,
   PlatformStatusSummary,
   TargetAlertStateRecord
 } from "@enterprise-resilience/contracts";
@@ -32,6 +33,7 @@ export class PlatformService {
     const redisUrl = process.env.REDIS_URL;
     const awsLiveExecution = this.awsConfig.isLiveExecutionEnabled();
     const gcpLiveExecution = this.gcpConfig.isLiveExecutionEnabled();
+    const activeCloudProviders = this.getActiveCloudProviders();
     const deploymentMode = process.env.DEPLOYMENT_MODE ?? "cloud-ready";
     const alertChannels = await this.alertRouting.listRuntimeChannelConfigs();
     const alertWebhookConfigured = alertChannels.some((channel) => channel.configured);
@@ -195,8 +197,9 @@ export class PlatformService {
       };
     };
 
-    const awsTargets = await Promise.all(
-      this.awsConfig.listTargets().map(async (target) => ({
+    const awsTargets = activeCloudProviders.includes("aws")
+      ? await Promise.all(
+        this.awsConfig.listTargets().map(async (target) => ({
         provider: "aws" as const,
         executionMode: awsLiveExecution ? ("live-enabled" as const) : ("simulation-only" as const),
         targetService: target.serviceId,
@@ -212,10 +215,12 @@ export class PlatformService {
         lastSuccessfulLiveAction: buildLastSuccessfulLiveAction("aws", target.serviceId, "aws-ecs-scale-service"),
         ...(await buildMetricAlert("aws", target.serviceId))
       }))
-    );
+    )
+      : [];
 
-    const gcpTargets = await Promise.all(
-      this.gcpConfig.listTargets().map(async (target) => ({
+    const gcpTargets = activeCloudProviders.includes("gcp")
+      ? await Promise.all(
+        this.gcpConfig.listTargets().map(async (target) => ({
         provider: "gcp" as const,
         executionMode: gcpLiveExecution ? ("live-enabled" as const) : ("simulation-only" as const),
         targetService: target.serviceId,
@@ -231,7 +236,31 @@ export class PlatformService {
         lastSuccessfulLiveAction: buildLastSuccessfulLiveAction("gcp", target.serviceId, "gcp-cloud-run-shift-revision"),
         ...(await buildMetricAlert("gcp", target.serviceId))
       }))
-    );
+    )
+      : [];
+
+    const cloudComponents: PlatformStatusComponent[] = [];
+    if (activeCloudProviders.includes("aws")) {
+      cloudComponents.push({
+        name: "AWS execution adapter",
+        kind: "cloud-adapter",
+        status: awsLiveExecution ? "ready" : "disabled",
+        summary: awsLiveExecution
+          ? "Live ECS dry-run and bounded execution are enabled for approved targets."
+          : "Running in safe simulation mode until AWS_ECS_LIVE_EXECUTION=true."
+      });
+    }
+
+    if (activeCloudProviders.includes("gcp")) {
+      cloudComponents.push({
+        name: "GCP execution adapter",
+        kind: "cloud-adapter",
+        status: gcpLiveExecution ? "ready" : "disabled",
+        summary: gcpLiveExecution
+          ? "Cloud Run traffic-shift execution is enabled for approved targets."
+          : "Running in safe simulation mode until GCP_CLOUD_RUN_LIVE_EXECUTION=true."
+      });
+    }
 
     return {
       productName: "Enterprise Resilience Agent",
@@ -239,6 +268,7 @@ export class PlatformService {
       environmentName: process.env.APP_ENVIRONMENT ?? "demo",
       apiBasePath: "/api",
       generatedAt: new Date().toISOString(),
+      activeCloudProviders,
       components: [
         {
           name: "Operations dashboard",
@@ -270,22 +300,7 @@ export class PlatformService {
             ? "Configured for idempotency control and approval execution locks."
             : "Set REDIS_URL to enable idempotency control and execution locking."
         },
-        {
-          name: "AWS execution adapter",
-          kind: "cloud-adapter",
-          status: awsLiveExecution ? "ready" : "disabled",
-          summary: awsLiveExecution
-            ? "Live ECS dry-run and bounded execution are enabled for approved targets."
-            : "Running in safe simulation mode until AWS_ECS_LIVE_EXECUTION=true."
-        },
-        {
-          name: "GCP execution adapter",
-          kind: "cloud-adapter",
-          status: gcpLiveExecution ? "ready" : "disabled",
-          summary: gcpLiveExecution
-            ? "Cloud Run traffic-shift execution is enabled for approved targets."
-            : "Running in safe simulation mode until GCP_CLOUD_RUN_LIVE_EXECUTION=true."
-        },
+        ...cloudComponents,
         {
           name: "User guide",
           kind: "documentation",
@@ -362,7 +377,7 @@ export class PlatformService {
       nextSteps: [
         "Set APP_BASE_URL and API_PUBLIC_URL for the real environment.",
         "Configure DATABASE_URL and REDIS_URL before production use.",
-        "Keep AWS and GCP live execution off until allowed targets and execution identities are verified."
+        `Keep ${activeCloudProviders.map((provider) => provider.toUpperCase()).join(" and ")} live execution off until allowed targets and execution identities are verified.`
       ]
     };
   }
@@ -608,5 +623,19 @@ export class PlatformService {
           (proposal) => proposal.targetService === targetService && proposal.cloudProvider === provider
         )
     )?.incidentId ?? `target:${provider}:${targetService}`;
+  }
+
+  private getActiveCloudProviders(): CloudProvider[] {
+    const raw = process.env.ERA_ENABLED_CLOUD_PROVIDERS?.trim();
+    if (!raw) {
+      return ["aws", "gcp"];
+    }
+
+    const requested = raw
+      .split(",")
+      .map((value) => value.trim().toLowerCase())
+      .filter((value): value is CloudProvider => value === "aws" || value === "gcp");
+
+    return requested.length > 0 ? requested : ["aws", "gcp"];
   }
 }
