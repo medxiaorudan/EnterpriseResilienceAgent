@@ -265,6 +265,16 @@ export interface PlatformAccessLink {
   summary: string;
 }
 
+export interface PlatformProviderTarget {
+  provider: CloudProvider;
+  executionMode: "simulation-only" | "live-enabled";
+  targetService: string;
+  environment: Environment;
+  summary: string;
+  region?: string;
+  runbookId?: string;
+}
+
 export interface PlatformStatusSummary {
   productName: string;
   deploymentMode: "local" | "container" | "cloud-ready";
@@ -272,6 +282,7 @@ export interface PlatformStatusSummary {
   apiBasePath: string;
   generatedAt: string;
   components: PlatformStatusComponent[];
+  providerTargets: PlatformProviderTarget[];
   accessLinks: PlatformAccessLink[];
   nextSteps: string[];
 }

@@ -22,7 +22,10 @@ export function PlatformPage() {
 
   const platform = platformQuery.data;
   const components = platform?.components ?? [];
+  const providerTargets = platform?.providerTargets ?? [];
+  const cloudComponents = components.filter((component) => component.kind === "cloud-adapter");
   const readyCount = components.filter((component) => component.status === "ready").length;
+  const liveProviderCount = cloudComponents.filter((component) => component.status === "ready").length;
 
   return (
     <div className="page-grid">
@@ -47,6 +50,9 @@ export function PlatformPage() {
         </Card>
         <Card>
           <Stat label="API base path" value={platform?.apiBasePath ?? "/api"} hint="Integration entry point" />
+        </Card>
+        <Card>
+          <Stat label="Live cloud lanes" value={String(liveProviderCount)} hint="Providers enabled for bounded execution" />
         </Card>
       </div>
 
@@ -82,6 +88,42 @@ export function PlatformPage() {
           </div>
         </Card>
       </div>
+
+      <Card title="Approved provider targets" subtitle="Which cloud lanes are ready and what each lane is allowed to touch">
+        <div className="provider-grid">
+          {cloudComponents.map((component) => {
+            const providerName = component.name.startsWith("AWS") ? "aws" : "gcp";
+            const targets = providerTargets.filter((target) => target.provider === providerName);
+
+            return (
+              <div key={component.name} className="provider-card">
+                <div className="provider-card-header">
+                  <div>
+                    <p className="eyebrow">{providerName.toUpperCase()}</p>
+                    <strong>{component.name}</strong>
+                    <p>{component.summary}</p>
+                  </div>
+                  <Badge tone={componentTone(component.status)}>{component.status}</Badge>
+                </div>
+                <div className="stack">
+                  {targets.map((target) => (
+                    <div key={`${target.provider}-${target.targetService}`} className="target-card">
+                      <div className="provider-chip-row">
+                        <span className="provider-chip">{target.targetService}</span>
+                        <span className="provider-chip provider-chip-muted">{target.executionMode}</span>
+                      </div>
+                      <p>{target.summary}</p>
+                      <p className="muted">
+                        {target.environment} · {target.region ?? "managed region"} · {target.runbookId ?? "registered runbook"}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </Card>
 
       <Card title="Deployment checklist" subtitle="Recommended next actions before production rollout">
         <div className="stack">

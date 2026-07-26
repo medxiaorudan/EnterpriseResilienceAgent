@@ -80,6 +80,26 @@ export class PlatformService {
           url: "docs/user-guide.md"
         }
       ],
+      providerTargets: [
+        ...this.awsConfig.listTargets().map((target) => ({
+          provider: "aws" as const,
+          executionMode: awsLiveExecution ? ("live-enabled" as const) : ("simulation-only" as const),
+          targetService: target.serviceId,
+          environment: (target.environments[0] ?? "production") as "production" | "staging" | "development",
+          region: target.region,
+          runbookId: "aws-ecs-scale-service",
+          summary: `ECS target ${target.ecsServiceName} can scale from ${target.minDesiredCount} to ${target.maxDesiredCount} in ${target.region}.`
+        })),
+        ...this.gcpConfig.listTargets().map((target) => ({
+          provider: "gcp" as const,
+          executionMode: gcpLiveExecution ? ("live-enabled" as const) : ("simulation-only" as const),
+          targetService: target.serviceId,
+          environment: (target.environments[0] ?? "production") as "production" | "staging" | "development",
+          region: target.region,
+          runbookId: "gcp-cloud-run-shift-revision",
+          summary: `Cloud Run target ${target.serviceName} can shift ${target.shiftPercent}% of traffic to revision ${target.previousRevision}.`
+        }))
+      ],
       accessLinks: [
         {
           label: "Executive overview",

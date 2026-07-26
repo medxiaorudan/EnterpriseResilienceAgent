@@ -77,11 +77,20 @@ export function IncidentDetailPage() {
             <div className="action-panel">
               <h4>Recommended action</h4>
               <p>{primaryProposal.reason}</p>
+              <div className="provider-chip-row">
+                <span className="provider-chip">{primaryProposal.cloudProvider.toUpperCase()}</span>
+                <span className="provider-chip provider-chip-muted">{primaryProposal.targetEnvironment}</span>
+                <span className="provider-chip provider-chip-muted">{primaryProposal.runbookId}</span>
+              </div>
               <p>
                 Expected result: <strong>{primaryProposal.expectedResult}</strong>
               </p>
               <p>
                 Cost: ${primaryProposal.estimatedCostPerHour?.toFixed(2)}/hour · Risk: {primaryProposal.riskLevel}
+              </p>
+              <p>
+                Target service: <strong>{primaryProposal.targetService}</strong>
+                {primaryProposal.rollbackRunbookId ? ` · Rollback: ${primaryProposal.rollbackRunbookId}` : ""}
               </p>
             </div>
           ) : null}
@@ -95,6 +104,29 @@ export function IncidentDetailPage() {
       </div>
 
       <div className="three-column">
+        <Card title="Execution lane">
+          {primaryProposal ? (
+            <div className="stack">
+              <div className="entry">
+                <strong>Cloud provider</strong>
+                <p>{primaryProposal.cloudProvider.toUpperCase()}</p>
+              </div>
+              <div className="entry">
+                <strong>Runbook</strong>
+                <p>
+                  {primaryProposal.runbookId} · v{primaryProposal.runbookVersion}
+                </p>
+              </div>
+              <div className="entry">
+                <strong>Verification checks</strong>
+                <p>{primaryProposal.verificationChecks.join(" · ")}</p>
+              </div>
+            </div>
+          ) : (
+            <p>No registered execution lane is attached to this incident.</p>
+          )}
+        </Card>
+
         <Card title="Evidence">
           <div className="stack">
             {incident.evidence.map((item) => (
