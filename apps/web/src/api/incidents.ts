@@ -73,6 +73,12 @@ export function getServiceMetrics(serviceId: string) {
     label: string;
     unit: string;
     points: Array<{ timestamp: string; value: number }>;
+    latestValue: number;
+    delta: number;
+    deltaDirection: "up" | "down" | "flat";
+    thresholdLabel: string;
+    thresholdStatus: "within-threshold" | "warning" | "breached";
+    source: "persisted" | "seeded";
   }>>(`/services/${serviceId}/metrics`);
 }
 

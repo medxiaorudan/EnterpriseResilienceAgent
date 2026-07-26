@@ -8,7 +8,9 @@ import {
   type IncidentStatus,
   type IncidentTimelineEntry,
   type ExecutionRecord,
+  type MetricSeriesPoint,
   type RegisteredRunbook,
+  type StoredMetricSample,
   type VerificationResult,
   seedAuditEvents,
   seedIncidents,
@@ -47,6 +49,79 @@ export class StoreService implements OnModuleInit {
       [serviceId]
     );
     return result.rows[0]?.payload;
+  }
+
+  async listMetricHistory(serviceId: string, metricNames: string[], limitPerMetric = 6) {
+    await this.ensureInitialized();
+    if (metricNames.length === 0) {
+      return new Map<string, StoredMetricSample[]>();
+    }
+
+    const result = await this.postgres.query<{ payload: StoredMetricSample }>(
+      `
+        select payload
+        from (
+          select
+            payload,
+            row_number() over (
+              partition by metric_name
+              order by created_at desc
+            ) as row_rank
+          from metric_history
+          where service_id = $1 and metric_name = any($2::text[])
+        ) ranked
+        where row_rank <= $3
+        order by (payload->>'metricName') asc, created_at asc
+      `,
+      [serviceId, metricNames, limitPerMetric]
+    );
+
+    const samples = new Map<string, StoredMetricSample[]>();
+    for (const row of result.rows) {
+      const list = samples.get(row.payload.metricName) ?? [];
+      list.push(row.payload);
+      samples.set(row.payload.metricName, list);
+    }
+    return samples;
+  }
+
+  async appendMetricSample(sample: Omit<StoredMetricSample, "sampleId"> & Partial<Pick<StoredMetricSample, "sampleId">>) {
+    await this.ensureInitialized();
+    const record: StoredMetricSample = {
+      sampleId: sample.sampleId ?? randomUUID(),
+      ...sample
+    };
+
+    await this.postgres.query(
+      `
+        insert into metric_history (sample_id, service_id, metric_name, created_at, payload)
+        values ($1, $2, $3, $4, $5::jsonb)
+      `,
+      [record.sampleId, record.serviceId, record.metricName, record.timestamp, JSON.stringify(record)]
+    );
+
+    await this.postgres.query(
+      `
+        delete from metric_history
+        where sample_id in (
+          select sample_id
+          from (
+            select
+              sample_id,
+              row_number() over (
+                partition by service_id, metric_name
+                order by created_at desc
+              ) as row_rank
+            from metric_history
+            where service_id = $1 and metric_name = $2
+          ) ranked
+          where row_rank > 12
+        )
+      `,
+      [record.serviceId, record.metricName]
+    );
+
+    return record;
   }
 
   async listIncidents() {
@@ -338,16 +413,26 @@ export class StoreService implements OnModuleInit {
         payload jsonb not null
       );
 
+      create table if not exists metric_history (
+        sample_id text primary key,
+        service_id text not null references services(service_id) on delete cascade,
+        metric_name text not null,
+        created_at timestamptz not null,
+        payload jsonb not null
+      );
+
       create index if not exists idx_incidents_updated_at on incidents(updated_at desc);
       create index if not exists idx_approvals_incident_created_at on approvals(incident_id, created_at desc);
       create index if not exists idx_audit_events_incident_created_at on audit_events(incident_id, created_at desc);
       create index if not exists idx_audit_events_execution_created_at on audit_events(execution_id, created_at desc);
+      create index if not exists idx_metric_history_service_metric_created_at on metric_history(service_id, metric_name, created_at desc);
     `);
 
     await this.seedServices();
     await this.seedRunbooks();
     await this.seedIncidents();
     await this.seedAuditEvents();
+    await this.seedMetricHistory();
   }
 
   private async seedServices() {
@@ -429,6 +514,52 @@ export class StoreService implements OnModuleInit {
     });
   }
 
+  private async seedMetricHistory() {
+    const result = await this.postgres.query<{ count: string }>("select count(*)::text as count from metric_history");
+    if (Number(result.rows[0]?.count ?? "0") > 0) {
+      return;
+    }
+
+    const now = Date.now();
+    const metricNamesByProvider: Record<CloudService["cloudProvider"], Array<{ metricName: string; unit: string }>> = {
+      aws: [
+        { metricName: "queue_depth", unit: "count" },
+        { metricName: "cpu_utilization", unit: "%" },
+        { metricName: "p95_latency_ms", unit: "ms" }
+      ],
+      gcp: [
+        { metricName: "request_error_rate", unit: "%" },
+        { metricName: "request_latency_p95_ms", unit: "ms" },
+        { metricName: "revision_health_score", unit: "score" }
+      ]
+    };
+
+    await this.postgres.transaction(async (query) => {
+      for (const service of seedServices) {
+        for (const metric of metricNamesByProvider[service.cloudProvider]) {
+          const points = this.buildSeedMetricPoints(service, metric.metricName, now);
+          for (const point of points) {
+            const sample: StoredMetricSample = {
+              sampleId: randomUUID(),
+              serviceId: service.serviceId,
+              metricName: metric.metricName,
+              unit: metric.unit,
+              value: point.value,
+              timestamp: point.timestamp
+            };
+            await query(
+              `
+                insert into metric_history (sample_id, service_id, metric_name, created_at, payload)
+                values ($1, $2, $3, $4, $5::jsonb)
+              `,
+              [sample.sampleId, sample.serviceId, sample.metricName, sample.timestamp, JSON.stringify(sample)]
+            );
+          }
+        }
+      }
+    });
+  }
+
   private async listApprovalsByIncidentIds(incidentIds: string[]) {
     if (incidentIds.length === 0) {
       return new Map<string, ApprovalRecord[]>();
@@ -471,5 +602,37 @@ export class StoreService implements OnModuleInit {
         JSON.stringify(incident)
       ]
     );
+  }
+
+  private buildSeedMetricPoints(service: CloudService, metricName: string, now: number): MetricSeriesPoint[] {
+    const currentValue = this.fallbackMetricValue(service, metricName);
+    const severityFactor =
+      service.health.status === "critical" ? 1.35 : service.health.status === "degraded" ? 1.15 : 0.9;
+
+    return Array.from({ length: 6 }, (_, index) => {
+      const step = 5 - index;
+      const timestamp = new Date(now - step * 5 * 60 * 1000).toISOString();
+      const multiplier = 1 - (5 - index) * 0.05 * severityFactor;
+      const value = Math.max(0, Number((currentValue * multiplier).toFixed(2)));
+
+      return {
+        timestamp,
+        value
+      };
+    });
+  }
+
+  private fallbackMetricValue(service: CloudService, metricName: string) {
+    const health = service.health;
+    const map: Record<string, number> = {
+      queue_depth: health.saturation * 10,
+      cpu_utilization: health.saturation,
+      p95_latency_ms: health.latencyP95Ms,
+      request_error_rate: health.errorRate,
+      request_latency_p95_ms: health.latencyP95Ms,
+      revision_health_score: Math.max(0, 100 - health.errorRate * 10)
+    };
+
+    return map[metricName] ?? 0;
   }
 }

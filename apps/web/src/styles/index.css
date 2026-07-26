@@ -360,6 +360,13 @@ button {
   gap: 12px;
 }
 
+.sparkline-summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 .sparkline-points {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
@@ -379,6 +386,31 @@ button {
 .sparkline-caption {
   font-size: 0.72rem;
   color: rgba(24, 34, 24, 0.56);
+}
+
+.metric-status {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: capitalize;
+}
+
+.metric-status-within-threshold {
+  background: rgba(22, 101, 52, 0.12);
+  color: var(--good);
+}
+
+.metric-status-warning {
+  background: rgba(180, 83, 9, 0.12);
+  color: var(--warning);
+}
+
+.metric-status-breached {
+  background: rgba(180, 35, 24, 0.12);
+  color: var(--danger);
 }
 
 .sparkline-fill {

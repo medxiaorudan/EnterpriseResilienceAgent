@@ -15,6 +15,7 @@ class FakeStoreService {
     this.auditEvents = [];
     this.runbooks = new Map();
     this.services = new Map();
+    this.metricHistory = new Map();
     for (const incident of structuredClone(seed)) {
       this.incidents.set(incident.incidentId, incident);
     }
@@ -32,6 +33,27 @@ class FakeStoreService {
 
   async getService(serviceId) {
     return this.services.get(serviceId);
+  }
+
+  async listMetricHistory(serviceId, metricNames, limitPerMetric = 6) {
+    const history = new Map();
+    for (const metricName of metricNames) {
+      const entries = (this.metricHistory.get(`${serviceId}:${metricName}`) ?? []).slice(-limitPerMetric);
+      history.set(metricName, entries);
+    }
+    return history;
+  }
+
+  async appendMetricSample(sample) {
+    const record = {
+      sampleId: sample.sampleId ?? randomUUID(),
+      ...sample
+    };
+    const key = `${record.serviceId}:${record.metricName}`;
+    const entries = this.metricHistory.get(key) ?? [];
+    entries.push(record);
+    this.metricHistory.set(key, entries.slice(-12));
+    return record;
   }
 
   async listIncidents() {

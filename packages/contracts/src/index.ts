@@ -343,11 +343,26 @@ export interface MetricSeriesPoint {
   value: number;
 }
 
+export interface StoredMetricSample {
+  sampleId: string;
+  serviceId: string;
+  metricName: string;
+  unit: string;
+  value: number;
+  timestamp: string;
+}
+
 export interface ServiceMetricTrend {
   metricName: string;
   label: string;
   unit: string;
   points: MetricSeriesPoint[];
+  latestValue: number;
+  delta: number;
+  deltaDirection: "up" | "down" | "flat";
+  thresholdLabel: string;
+  thresholdStatus: "within-threshold" | "warning" | "breached";
+  source: "persisted" | "seeded";
 }
 
 export interface LogQuery {

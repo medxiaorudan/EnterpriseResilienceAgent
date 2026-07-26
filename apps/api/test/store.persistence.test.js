@@ -16,7 +16,8 @@ class FakePostgresService {
       runbooks: new Map(),
       incidents: new Map(),
       approvals: new Map(),
-      audit_events: new Map()
+      audit_events: new Map(),
+      metric_history: new Map()
     };
   }
 
@@ -41,6 +42,10 @@ class FakePostgresService {
 
     if (sql === "select count(*)::text as count from audit_events") {
       return this.result([{ count: String(this.tables.audit_events.size) }]);
+    }
+
+    if (sql === "select count(*)::text as count from metric_history") {
+      return this.result([{ count: String(this.tables.metric_history.size) }]);
     }
 
     if (sql.startsWith("insert into services")) {
@@ -112,6 +117,30 @@ class FakePostgresService {
       return this.result([]);
     }
 
+    if (sql.startsWith("insert into metric_history")) {
+      const [sampleId, serviceId, metricName, createdAt, payload] = values;
+      this.tables.metric_history.set(sampleId, {
+        sample_id: sampleId,
+        service_id: serviceId,
+        metric_name: metricName,
+        created_at: createdAt,
+        payload: JSON.parse(payload)
+      });
+      return this.result([]);
+    }
+
+    if (sql.startsWith("delete from metric_history")) {
+      const [serviceId, metricName] = values;
+      const matches = [...this.tables.metric_history.values()]
+        .filter((row) => row.service_id === serviceId && row.metric_name === metricName)
+        .sort((left, right) => String(right.created_at).localeCompare(String(left.created_at)));
+
+      for (const row of matches.slice(12)) {
+        this.tables.metric_history.delete(row.sample_id);
+      }
+      return this.result([]);
+    }
+
     if (sql === "select payload from services order by payload->>'name' asc") {
       return this.result(
         [...this.tables.services.values()]
@@ -177,6 +206,27 @@ class FakePostgresService {
       );
     }
 
+    if (
+      sql ===
+      "select payload from ( select payload, row_number() over ( partition by metric_name order by created_at desc ) as row_rank from metric_history where service_id = $1 and metric_name = any($2::text[]) ) ranked where row_rank <= $3 order by (payload->>'metricname') asc, created_at asc"
+    ) {
+      const [serviceId, metricNames, limitPerMetric] = values;
+      const allowed = new Set(metricNames ?? []);
+      const rows = [];
+
+      for (const metricName of [...allowed].sort()) {
+        const samples = [...this.tables.metric_history.values()]
+          .filter((row) => row.service_id === serviceId && row.metric_name === metricName)
+          .sort((left, right) => String(right.created_at).localeCompare(String(left.created_at)))
+          .slice(0, limitPerMetric)
+          .reverse()
+          .map((row) => ({ payload: row.payload }));
+        rows.push(...samples);
+      }
+
+      return this.result(rows);
+    }
+
     if (sql === "select incident_id, payload from approvals where incident_id = any($1::text[]) order by created_at asc") {
       const incidentIds = new Set(values[0] ?? []);
       return this.result(
@@ -217,11 +267,13 @@ describe("store persistence behavior", () => {
     const incidents = await store.listIncidents();
     const runbooks = await store.listRunbooks();
     const auditEvents = await store.listAuditEvents();
+    const metricHistory = await store.listMetricHistory("checkout-api", ["queue_depth"], 6);
 
     assert.equal(services.length, seedServices.length);
     assert.equal(runbooks.length, seedRunbooks.length);
     assert.equal(incidents.length, seedIncidents.length);
     assert.equal(auditEvents.length, seedAuditEvents.length);
+    assert.equal(metricHistory.get("queue_depth")?.length, 6);
     assert.equal(incidents[0].incidentId, seedIncidents[0].incidentId);
   });
 
@@ -312,5 +364,27 @@ describe("store persistence behavior", () => {
     assert.equal(executionAudit.length, 1);
     assert.equal(executionAudit[0].executionId, executionId);
     assert.equal(executionAudit[0].summary, "Recovery verified");
+  });
+
+  test("persists and retains recent metric history per service and metric", async () => {
+    const store = new StoreService(new FakePostgresService());
+    await store.onModuleInit();
+
+    for (let index = 0; index < 8; index += 1) {
+      await store.appendMetricSample({
+        serviceId: "checkout-api",
+        metricName: "queue_depth",
+        unit: "count",
+        value: 900 + index,
+        timestamp: `2026-07-26T23:${String(index).padStart(2, "0")}:00.000Z`
+      });
+    }
+
+    const history = await store.listMetricHistory("checkout-api", ["queue_depth"], 6);
+    const points = history.get("queue_depth") ?? [];
+
+    assert.equal(points.length, 6);
+    assert.equal(points[0].value, 902);
+    assert.equal(points[5].value, 907);
   });
 });

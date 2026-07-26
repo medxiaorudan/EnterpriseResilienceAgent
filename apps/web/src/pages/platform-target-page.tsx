@@ -36,6 +36,15 @@ function clampBar(value: number, max: number) {
   return `${Math.max(8, Math.min(100, Math.round((value / max) * 100)))}%`;
 }
 
+function formatDelta(delta: number, unit: string) {
+  if (delta === 0) {
+    return `No change ${unit}`;
+  }
+
+  const prefix = delta > 0 ? "+" : "";
+  return `${prefix}${delta} ${unit}`;
+}
+
 function getReadinessSummary(input: {
   executionMode: "simulation-only" | "live-enabled";
   healthStatus?: "healthy" | "degraded" | "critical";
@@ -243,9 +252,14 @@ export function PlatformTargetPage() {
                 <div key={metric.label} className="sparkline-row">
                   <div className="sparkline-meta">
                     <strong>{metric.label}</strong>
-                    <span className="muted">
-                      {metric.points[metric.points.length - 1]?.value} {metric.unit}
-                    </span>
+                    <div className="sparkline-summary">
+                      <span className="muted">
+                        {metric.latestValue} {metric.unit}
+                      </span>
+                      <span className={`metric-status metric-status-${metric.thresholdStatus}`}>
+                        {metric.thresholdStatus.replace("-", " ")}
+                      </span>
+                    </div>
                   </div>
                   <div className="sparkline-points">
                     {metric.points.map((point) => (
@@ -261,9 +275,16 @@ export function PlatformTargetPage() {
                       </div>
                     ))}
                   </div>
+                  <div className="provider-chip-row">
+                    <span className="provider-chip provider-chip-muted">
+                      delta: {formatDelta(metric.delta, metric.unit)}
+                    </span>
+                    <span className="provider-chip provider-chip-muted">{metric.thresholdLabel}</span>
+                    <span className="provider-chip provider-chip-muted">source: {metric.source}</span>
+                  </div>
                 </div>
               ))}
-              <p className="muted">Series synthesized from the provider metric endpoint over the last 30 minutes.</p>
+              <p className="muted">Each page load appends a fresh provider sample and keeps the recent history for this target.</p>
             </div>
           ) : (
             <p>Loading metric trends...</p>
