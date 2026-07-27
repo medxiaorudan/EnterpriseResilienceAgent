@@ -38,6 +38,7 @@ import {
 import { randomUUID } from "node:crypto";
 import { StoreService } from "../../common/store.service.js";
 import { AwsConfigService } from "../aws-config.service.js";
+import { syntheticMetricResult } from "./synthetic-metrics.js";
 
 @Injectable()
 export class AwsOperationsAdapter implements CloudOperationsAdapter {
@@ -74,23 +75,12 @@ export class AwsOperationsAdapter implements CloudOperationsAdapter {
       return [];
     }
 
-    const timestamp = new Date().toISOString();
-    const syntheticMetrics: Record<string, number> = {
+    return syntheticMetricResult(query, {
       queue_depth: 920,
       cpu_utilization: 91,
       checkout_success_rate: 91.2,
       p95_latency_ms: 2650
-    };
-
-    const value = syntheticMetrics[query.metricName] ?? 0;
-    return [
-      {
-        metricName: query.metricName,
-        value,
-        unit: query.metricName.includes("rate") ? "percent" : "count",
-        timestamp
-      }
-    ];
+    });
   }
 
   async queryLogs(_query: LogQuery): Promise<LogResult[]> {

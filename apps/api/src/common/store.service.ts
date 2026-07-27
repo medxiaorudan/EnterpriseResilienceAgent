@@ -21,6 +21,7 @@ import {
   seedServices
 } from "@enterprise-resilience/contracts";
 import { randomUUID } from "node:crypto";
+import { fallbackMetricValue } from "../services/metric-policy.js";
 import { PostgresService } from "./postgres.service.js";
 
 type JsonRow<T> = {
@@ -66,12 +67,24 @@ export class StoreService implements OnModuleInit {
         from (
           select
             payload,
+            created_at,
             row_number() over (
               partition by metric_name
               order by created_at desc
             ) as row_rank
-          from metric_history
-          where service_id = $1 and metric_name = any($2::text[])
+          from metric_history sample
+          where sample.service_id = $1
+            and sample.metric_name = any($2::text[])
+            and (
+              sample.synthetic = false
+              or not exists (
+                select 1
+                from metric_history real_sample
+                where real_sample.service_id = sample.service_id
+                  and real_sample.metric_name = sample.metric_name
+                  and real_sample.synthetic = false
+              )
+            )
         ) ranked
         where row_rank <= $3
         order by (payload->>'metricName') asc, created_at asc
@@ -97,10 +110,10 @@ export class StoreService implements OnModuleInit {
 
     await this.postgres.query(
       `
-        insert into metric_history (sample_id, service_id, metric_name, created_at, payload)
-        values ($1, $2, $3, $4, $5::jsonb)
+        insert into metric_history (sample_id, service_id, metric_name, created_at, synthetic, payload)
+        values ($1, $2, $3, $4, $5, $6::jsonb)
       `,
-      [record.sampleId, record.serviceId, record.metricName, record.timestamp, JSON.stringify(record)]
+      [record.sampleId, record.serviceId, record.metricName, record.timestamp, false, JSON.stringify(record)]
     );
 
     await this.postgres.query(
@@ -489,7 +502,15 @@ export class StoreService implements OnModuleInit {
   }
 
   private async ensureInitialized() {
-    this.initPromise ??= this.initialize();
+    if (!this.initPromise) {
+      // Clear the cache on failure. `??=` would leave a rejected promise here
+      // forever, so every later request re-awaited the same rejection and the
+      // API never recovered once the database came back.
+      this.initPromise = this.initialize().catch((error) => {
+        this.initPromise = undefined;
+        throw error;
+      });
+    }
     await this.initPromise;
   }
 
@@ -538,6 +559,7 @@ export class StoreService implements OnModuleInit {
         service_id text not null references services(service_id) on delete cascade,
         metric_name text not null,
         created_at timestamptz not null,
+        synthetic boolean not null default false,
         payload jsonb not null
       );
 
@@ -572,6 +594,10 @@ export class StoreService implements OnModuleInit {
       create index if not exists idx_audit_events_incident_created_at on audit_events(incident_id, created_at desc);
       create index if not exists idx_audit_events_execution_created_at on audit_events(execution_id, created_at desc);
       create index if not exists idx_metric_history_service_metric_created_at on metric_history(service_id, metric_name, created_at desc);
+
+      -- "create table if not exists" above does nothing on a database that
+      -- predates the synthetic column, so add it separately for existing installs.
+      alter table metric_history add column if not exists synthetic boolean not null default false;
       create index if not exists idx_target_alert_states_provider_target on target_alert_states(provider, target_service);
       create index if not exists idx_alert_dead_letters_channel_created_at on alert_dead_letters(channel_name, created_at desc);
     `);
@@ -697,10 +723,10 @@ export class StoreService implements OnModuleInit {
             };
             await query(
               `
-                insert into metric_history (sample_id, service_id, metric_name, created_at, payload)
-                values ($1, $2, $3, $4, $5::jsonb)
+                insert into metric_history (sample_id, service_id, metric_name, created_at, synthetic, payload)
+                values ($1, $2, $3, $4, $5, $6::jsonb)
               `,
-              [sample.sampleId, sample.serviceId, sample.metricName, sample.timestamp, JSON.stringify(sample)]
+              [sample.sampleId, sample.serviceId, sample.metricName, sample.timestamp, true, JSON.stringify(sample)]
             );
           }
         }
@@ -753,7 +779,7 @@ export class StoreService implements OnModuleInit {
   }
 
   private buildSeedMetricPoints(service: CloudService, metricName: string, now: number): MetricSeriesPoint[] {
-    const currentValue = this.fallbackMetricValue(service, metricName);
+    const currentValue = fallbackMetricValue(service.health, metricName);
     const severityFactor =
       service.health.status === "critical" ? 1.35 : service.health.status === "degraded" ? 1.15 : 0.9;
 
@@ -770,17 +796,4 @@ export class StoreService implements OnModuleInit {
     });
   }
 
-  private fallbackMetricValue(service: CloudService, metricName: string) {
-    const health = service.health;
-    const map: Record<string, number> = {
-      queue_depth: health.saturation * 10,
-      cpu_utilization: health.saturation,
-      p95_latency_ms: health.latencyP95Ms,
-      request_error_rate: health.errorRate,
-      request_latency_p95_ms: health.latencyP95Ms,
-      revision_health_score: Math.max(0, 100 - health.errorRate * 10)
-    };
-
-    return map[metricName] ?? 0;
-  }
 }

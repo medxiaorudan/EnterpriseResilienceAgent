@@ -111,7 +111,7 @@ Start with the web dashboard.
 4. Approve, reject, or escalate.
 5. Review the outcome and audit trail.
 
-For a full business-facing guide, read [docs/user-guide.md](/Users/rudan/Documents/hobby_projects/EnterpriseResilienceAgent/docs/user-guide.md).
+For a full business-facing guide, read [docs/user-guide.md](docs/user-guide.md).
 
 ## How To Configure And Use The Agent
 
@@ -145,7 +145,7 @@ Typical usage:
 
 1. Start the API.
 2. Run the MCP server with `npm run start:mcp`.
-3. Point your MCP host to the example config in [.vscode/mcp.json.example](/Users/rudan/Documents/hobby_projects/EnterpriseResilienceAgent/.vscode/mcp.json.example).
+3. Point your MCP host to the example config in [.vscode/mcp.json.example](.vscode/mcp.json.example).
 
 The MCP server exposes incident, approval, runbook, audit, service, session, and platform-status tools.
 
@@ -171,7 +171,7 @@ The project needs these main settings:
 - `ERA_ENABLED_CLOUD_PROVIDERS`
 - `AWS_ECS_LIVE_EXECUTION`
 
-Starter values are available in [.env.example](/Users/rudan/Documents/hobby_projects/EnterpriseResilienceAgent/.env.example).
+Starter values are available in [.env.example](.env.example).
 
 Important:
 
@@ -208,13 +208,13 @@ After that, open:
 
 ## Deployment Guides
 
-- Ubuntu server deployment: [DEPLOYMENT_UBUNTU.md](/Users/rudan/Documents/hobby_projects/EnterpriseResilienceAgent/DEPLOYMENT_UBUNTU.md)
+- Ubuntu server deployment: [DEPLOYMENT_UBUNTU.md](DEPLOYMENT_UBUNTU.md)
 
 ## MCP Quick Start
 
 1. Start the API with `npm run dev:api`
 2. Start the MCP server with `npm run start:mcp`
-3. Configure your MCP host using [.vscode/mcp.json.example](/Users/rudan/Documents/hobby_projects/EnterpriseResilienceAgent/.vscode/mcp.json.example)
+3. Configure your MCP host using [.vscode/mcp.json.example](.vscode/mcp.json.example)
 4. Use the MCP tools:
    `get_platform_status`, `list_incidents`, `get_incident`, `approve_incident`, `reject_incident`, `escalate_incident`, `list_runbooks`, `simulate_runbook`, `list_audit_events`, `list_services`
 

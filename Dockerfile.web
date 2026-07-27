@@ -9,6 +9,9 @@ ARG VITE_API_BASE_URL=/api
 ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
 
 RUN npm ci
+# The web build runs `tsc --noEmit` first, which needs the contracts type
+# declarations even though every web import of it is `import type`.
+RUN npm run build --workspace @enterprise-resilience/contracts
 RUN npm run build --workspace @enterprise-resilience/web
 
 FROM nginx:1.27-alpine

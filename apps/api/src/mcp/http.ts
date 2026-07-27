@@ -5,7 +5,10 @@ import { validateMcpHttpAuth } from "./http-auth.js";
 import { mcpHttpHandler } from "./server.js";
 
 const port = Number(process.env.ERA_MCP_HTTP_PORT ?? 3101);
-const host = process.env.ERA_MCP_HTTP_HOST ?? "0.0.0.0";
+// Loopback by default. This transport fronts incident remediation, so the safe
+// default is "reachable only from this machine"; set ERA_MCP_HTTP_HOST=0.0.0.0
+// deliberately, behind a reverse proxy, if you need it exposed.
+const host = process.env.ERA_MCP_HTTP_HOST ?? "127.0.0.1";
 const basePath = process.env.ERA_MCP_HTTP_PATH ?? "/mcp";
 const allowUnauthenticated = process.env.ERA_MCP_HTTP_ALLOW_UNAUTHENTICATED === "true";
 const bearerToken = process.env.ERA_MCP_HTTP_BEARER_TOKEN;
@@ -60,6 +63,16 @@ async function toRequest(req: IncomingMessage) {
       ? ({ duplex: "half" } as RequestInit & { duplex: "half" })
       : {})
   });
+}
+
+// Fail fast with an actionable message rather than listening and answering every
+// request with 401. Request-level auth already rejects unconfigured setups, so
+// this is defence in depth plus a clearer signal to the operator.
+if (!allowUnauthenticated && !bearerToken && !oidcIssuer) {
+  throw new Error(
+    "MCP HTTP refuses to start without authentication. Set ERA_MCP_HTTP_BEARER_TOKEN " +
+      "or ERA_MCP_OIDC_ISSUER, or set ERA_MCP_HTTP_ALLOW_UNAUTHENTICATED=true to override."
+  );
 }
 
 createServer(async (req, res) => {

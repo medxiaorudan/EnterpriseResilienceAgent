@@ -28,6 +28,7 @@ import {
 import { randomUUID } from "node:crypto";
 import { StoreService } from "../../common/store.service.js";
 import { GcpConfigService } from "../gcp-config.service.js";
+import { syntheticMetricResult } from "./synthetic-metrics.js";
 
 @Injectable()
 export class GcpOperationsAdapter implements CloudOperationsAdapter {
@@ -59,23 +60,12 @@ export class GcpOperationsAdapter implements CloudOperationsAdapter {
       return [];
     }
 
-    const timestamp = new Date().toISOString();
-    const syntheticMetrics: Record<string, number> = {
+    return syntheticMetricResult(query, {
       request_error_rate: 0.4,
       request_latency_p95_ms: 430,
       revision_health_score: 97,
       traffic_shift_percent: 100
-    };
-
-    const value = syntheticMetrics[query.metricName] ?? 0;
-    return [
-      {
-        metricName: query.metricName,
-        value,
-        unit: query.metricName.includes("rate") ? "percent" : "count",
-        timestamp
-      }
-    ];
+    });
   }
 
   async queryLogs(_query: LogQuery): Promise<LogResult[]> {

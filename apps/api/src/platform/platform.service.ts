@@ -15,6 +15,13 @@ import { IncidentsService } from "../incidents/incidents.service.js";
 import { AlertRoutingService } from "../services/alert-routing.service.js";
 import { getMetricDefinitions, getThresholdStatus } from "../services/metric-policy.js";
 
+/**
+ * How many consecutive samples a metric must stay bad for before it counts as
+ * breached or elevated. Also interpolated into the operator-facing summaries, so
+ * the number and the wording cannot drift apart.
+ */
+const BREACH_CONSECUTIVE_SAMPLES = 3;
+
 @Injectable()
 export class PlatformService {
   constructor(
@@ -132,38 +139,15 @@ export class PlatformService {
 
     const buildMetricAlert = async (provider: "aws" | "gcp", targetService: string) => {
       const storedAlert = await this.store.getTargetAlertState(provider, targetService);
-      const definitions = getMetricDefinitions(provider);
-      const metricHistory = await this.store.listMetricHistory(
-        targetService,
-        definitions.map((metric) => metric.metricName),
-        3
+      const { collectedAt, breachedMetrics, warningMetrics } = await this.summarizeMetricState(
+        provider,
+        targetService
       );
-
-      const collectedAt = Math.max(
-        0,
-        ...[...metricHistory.values()].flat().map((sample) => new Date(sample.timestamp).getTime())
-      );
-      const breachedMetrics = definitions
-        .filter((metric) => {
-          const samples = metricHistory.get(metric.metricName) ?? [];
-          return samples.length === 3 && samples.every((sample) => getThresholdStatus(metric, sample.value) === "breached");
-        })
-        .map((metric) => metric.label);
-      const warningMetrics = definitions
-        .filter((metric) => {
-          const samples = metricHistory.get(metric.metricName) ?? [];
-          return (
-            samples.length === 3 &&
-            breachedMetrics.includes(metric.label) === false &&
-            samples.every((sample) => getThresholdStatus(metric, sample.value) !== "within-threshold")
-          );
-        })
-        .map((metric) => metric.label);
 
       if (breachedMetrics.length > 0) {
         return {
           metricAlertState: storedAlert?.state ?? ("breached" as const),
-          metricAlertSummary: storedAlert?.summary ?? `${breachedMetrics.join(", ")} stayed breached across the last 3 samples.`,
+          metricAlertSummary: storedAlert?.summary ?? `${breachedMetrics.join(", ")} stayed breached across the last ${BREACH_CONSECUTIVE_SAMPLES} samples.`,
           lastCollectedAt: storedAlert?.lastCollectedAt ?? (collectedAt ? new Date(collectedAt).toISOString() : undefined),
           breachedMetrics,
           alertAcknowledgedAt: storedAlert?.acknowledgedAt,
@@ -175,7 +159,7 @@ export class PlatformService {
       if (warningMetrics.length > 0) {
         return {
           metricAlertState: storedAlert?.state ?? ("warning" as const),
-          metricAlertSummary: storedAlert?.summary ?? `${warningMetrics.join(", ")} stayed elevated across the last 3 samples.`,
+          metricAlertSummary: storedAlert?.summary ?? `${warningMetrics.join(", ")} stayed elevated across the last ${BREACH_CONSECUTIVE_SAMPLES} samples.`,
           lastCollectedAt: storedAlert?.lastCollectedAt ?? (collectedAt ? new Date(collectedAt).toISOString() : undefined),
           breachedMetrics: warningMetrics,
           alertAcknowledgedAt: storedAlert?.acknowledgedAt,
@@ -499,6 +483,48 @@ export class PlatformService {
     return incident;
   }
 
+  /**
+   * Breach and warning state for one target, from its recent metric history.
+   *
+   * Extracted because this was duplicated verbatim in two places. Both callers
+   * feed incident creation, so a divergence here would let two endpoints
+   * disagree about whether the same service is breached.
+   */
+  private async summarizeMetricState(provider: CloudProvider, targetService: string) {
+    const definitions = getMetricDefinitions(provider);
+    const metricHistory = await this.store.listMetricHistory(
+      targetService,
+      definitions.map((metric) => metric.metricName),
+      BREACH_CONSECUTIVE_SAMPLES
+    );
+
+    const collectedAt = Math.max(
+      0,
+      ...[...metricHistory.values()].flat().map((sample) => new Date(sample.timestamp).getTime())
+    );
+    const breachedMetrics = definitions
+      .filter((metric) => {
+        const samples = metricHistory.get(metric.metricName) ?? [];
+        return (
+          samples.length === BREACH_CONSECUTIVE_SAMPLES &&
+          samples.every((sample) => getThresholdStatus(metric, sample.value) === "breached")
+        );
+      })
+      .map((metric) => metric.label);
+    const warningMetrics = definitions
+      .filter((metric) => {
+        const samples = metricHistory.get(metric.metricName) ?? [];
+        return (
+          samples.length === BREACH_CONSECUTIVE_SAMPLES &&
+          breachedMetrics.includes(metric.label) === false &&
+          samples.every((sample) => getThresholdStatus(metric, sample.value) !== "within-threshold")
+        );
+      })
+      .map((metric) => metric.label);
+
+    return { definitions, metricHistory, collectedAt, breachedMetrics, warningMetrics };
+  }
+
   private async resolveTargetAlert(
     provider: CloudProvider,
     targetService: string
@@ -508,32 +534,10 @@ export class PlatformService {
       return storedAlert;
     }
 
-    const definitions = getMetricDefinitions(provider);
-    const metricHistory = await this.store.listMetricHistory(
-      targetService,
-      definitions.map((metric) => metric.metricName),
-      3
+    const { collectedAt, breachedMetrics, warningMetrics } = await this.summarizeMetricState(
+      provider,
+      targetService
     );
-    const collectedAt = Math.max(
-      0,
-      ...[...metricHistory.values()].flat().map((sample) => new Date(sample.timestamp).getTime())
-    );
-    const breachedMetrics = definitions
-      .filter((metric) => {
-        const samples = metricHistory.get(metric.metricName) ?? [];
-        return samples.length === 3 && samples.every((sample) => getThresholdStatus(metric, sample.value) === "breached");
-      })
-      .map((metric) => metric.label);
-    const warningMetrics = definitions
-      .filter((metric) => {
-        const samples = metricHistory.get(metric.metricName) ?? [];
-        return (
-          samples.length === 3 &&
-          breachedMetrics.includes(metric.label) === false &&
-          samples.every((sample) => getThresholdStatus(metric, sample.value) !== "within-threshold")
-        );
-      })
-      .map((metric) => metric.label);
     const state: TargetAlertStateRecord["state"] =
       breachedMetrics.length > 0 ? "breached" : warningMetrics.length > 0 ? "warning" : "normal";
 
@@ -544,9 +548,9 @@ export class PlatformService {
       state,
       summary:
         state === "breached"
-          ? `${breachedMetrics.join(", ")} stayed breached across the last 3 samples.`
+          ? `${breachedMetrics.join(", ")} stayed breached across the last ${BREACH_CONSECUTIVE_SAMPLES} samples.`
           : state === "warning"
-            ? `${warningMetrics.join(", ")} stayed elevated across the last 3 samples.`
+            ? `${warningMetrics.join(", ")} stayed elevated across the last ${BREACH_CONSECUTIVE_SAMPLES} samples.`
             : "Recent samples remain within policy thresholds.",
       lastCollectedAt: collectedAt ? new Date(collectedAt).toISOString() : undefined,
       breachedMetrics: state === "breached" ? breachedMetrics : warningMetrics,

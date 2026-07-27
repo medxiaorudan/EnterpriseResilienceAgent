@@ -4,32 +4,42 @@ services:
     environment:
       POSTGRES_DB: resilience
       POSTGRES_USER: resilience
-      POSTGRES_PASSWORD: resilience
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U resilience -d resilience"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
 
   redis:
     image: redis:7-alpine
     command: redis-server --appendonly yes
     volumes:
       - redis_data:/data
+    restart: unless-stopped
 
   api:
     build:
       context: .
       dockerfile: Dockerfile.api
+    env_file: .env
     environment:
+      # Keys listed here win over env_file, so only values that must be fixed
+      # for a container run belong in this block.
       PORT: 3000
       APP_ENVIRONMENT: production
       DEPLOYMENT_MODE: container
-      APP_BASE_URL: http://localhost:8080
-      API_PUBLIC_URL: http://localhost:8080/api
-      DATABASE_URL: postgresql://resilience:resilience@postgres:5432/resilience
+      DATABASE_URL: postgresql://resilience:${DB_PASSWORD:?set DB_PASSWORD in .env}@postgres:5432/resilience
       REDIS_URL: redis://redis:6379
-      AWS_ECS_LIVE_EXECUTION: "false"
+    restart: unless-stopped
     depends_on:
-      - postgres
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
 
   web:
     build:
@@ -39,6 +49,7 @@ services:
         VITE_API_BASE_URL: /api
     ports:
       - "8080:80"
+    restart: unless-stopped
     depends_on:
       - api
 

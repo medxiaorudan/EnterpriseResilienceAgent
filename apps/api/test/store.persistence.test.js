@@ -27,7 +27,7 @@ class FakePostgresService {
   async query(text, values = []) {
     const sql = text.trim().replace(/\s+/g, " ").toLowerCase();
 
-    if (sql.startsWith("create table if not exists")) {
+    if (sql.startsWith("create table if not exists") || sql.startsWith("alter table")) {
       return this.result([]);
     }
 
@@ -121,12 +121,13 @@ class FakePostgresService {
     }
 
     if (sql.startsWith("insert into metric_history")) {
-      const [sampleId, serviceId, metricName, createdAt, payload] = values;
+      const [sampleId, serviceId, metricName, createdAt, synthetic, payload] = values;
       this.tables.metric_history.set(sampleId, {
         sample_id: sampleId,
         service_id: serviceId,
         metric_name: metricName,
         created_at: createdAt,
+        synthetic,
         payload: JSON.parse(payload)
       });
       return this.result([]);
@@ -295,17 +296,24 @@ class FakePostgresService {
       );
     }
 
-    if (
-      sql ===
-      "select payload from ( select payload, row_number() over ( partition by metric_name order by created_at desc ) as row_rank from metric_history where service_id = $1 and metric_name = any($2::text[]) ) ranked where row_rank <= $3 order by (payload->>'metricname') asc, created_at asc"
-    ) {
+    // Matched on a distinctive fragment rather than the whole statement: an exact
+    // comparison silently stops matching the moment the real query is reformatted,
+    // and this branch then goes dead without any test failing.
+    if (sql.startsWith("select payload from (") && sql.includes("as row_rank from metric_history")) {
       const [serviceId, metricNames, limitPerMetric] = values;
       const allowed = new Set(metricNames ?? []);
       const rows = [];
 
       for (const metricName of [...allowed].sort()) {
-        const samples = [...this.tables.metric_history.values()]
-          .filter((row) => row.service_id === serviceId && row.metric_name === metricName)
+        const all = [...this.tables.metric_history.values()].filter(
+          (row) => row.service_id === serviceId && row.metric_name === metricName
+        );
+        // Real samples win outright; synthetic seed points are only a fallback for
+        // metrics that have no real sample at all.
+        const real = all.filter((row) => row.synthetic === false);
+        const pool = real.length > 0 ? real : all;
+
+        const samples = pool
           .sort((left, right) => String(right.created_at).localeCompare(String(left.created_at)))
           .slice(0, limitPerMetric)
           .reverse()
